@@ -29,37 +29,40 @@ const zoomOptions = ZOOM_PRESETS.map(([value, label]) => `<option value="${value
 
 const markup = /* html */ `
   <div id="toolbar" class="toolbar" role="toolbar">
-    <div class="group">
-      <button id="prev-page" class="btn" title="Previous page (←)">${icon('chevronLeft')}</button>
-      <input id="page-number" class="page-number" type="number" min="1" value="1" aria-label="Page">
-      <span class="page-count">/ <span id="page-count">–</span></span>
-      <button id="next-page" class="btn" title="Next page (→)">${icon('chevronRight')}</button>
-    </div>
-    <div class="divider"></div>
-    <div class="group">
-      <button id="zoom-out" class="btn" title="Zoom out">${icon('minus')}</button>
-      <select id="zoom-select" class="zoom-select" title="Zoom">
-        ${zoomOptions}
-        <option id="zoom-custom" value="custom" hidden></option>
-      </select>
-      <button id="zoom-in" class="btn" title="Zoom in">${icon('plus')}</button>
-    </div>
-    <div class="divider"></div>
-    <div class="group">
-      <button class="btn tool" data-tool="select" title="Select text">${icon('textCursor')}</button>
-      <button class="btn tool" data-tool="highlight" title="Highlight text">${icon('highlighter')}</button>
-      <button class="btn tool" data-tool="eraser" title="Remove highlights (click a highlight)">${icon('eraser')}</button>
-      <div class="color-picker">
-        <button id="color-button" class="color-button" title="Highlight color" aria-haspopup="true" aria-expanded="false">
-          <span id="color-preview" class="swatch-preview"></span>${icon('chevronDown')}
-        </button>
-        <div id="color-popup" class="color-popup" hidden>${swatches}</div>
+    <div id="toolbar-items" class="toolbar-items">
+      <div class="group">
+        <button id="prev-page" class="btn" data-overflow="3" title="Previous page (←)">${icon('chevronLeft')}</button>
+        <input id="page-number" class="page-number" data-overflow="4" type="number" min="1" value="1" aria-label="Page">
+        <span class="page-count" data-overflow="4">/ <span id="page-count">–</span></span>
+        <button id="next-page" class="btn" data-overflow="3" title="Next page (→)">${icon('chevronRight')}</button>
+      </div>
+      <div class="group">
+        <button id="zoom-out" class="btn" data-overflow="5" title="Zoom out">${icon('minus')}</button>
+        <select id="zoom-select" class="zoom-select" data-overflow="6" title="Zoom">
+          ${zoomOptions}
+          <option id="zoom-custom" value="custom" hidden></option>
+        </select>
+        <button id="zoom-in" class="btn" data-overflow="5" title="Zoom in">${icon('plus')}</button>
+      </div>
+      <div class="group">
+        <button class="btn tool" data-tool="select" title="Select text">${icon('textCursor')}</button>
+        <button class="btn tool" data-tool="highlight" title="Highlight text">${icon('highlighter')}</button>
+        <button class="btn tool" data-tool="eraser" data-overflow="7" title="Remove highlights (click a highlight)">${icon('eraser')}</button>
+        <div class="color-picker" data-overflow="7">
+          <button id="color-button" class="color-button" title="Highlight color" aria-haspopup="true" aria-expanded="false">
+            <span id="color-preview" class="swatch-preview"></span>${icon('chevronDown')}
+          </button>
+          <div id="color-popup" class="color-popup" hidden>${swatches}</div>
+        </div>
+      </div>
+      <div class="group">
+        <button id="find-toggle" class="btn" data-overflow="2" title="Find (Ctrl/Cmd+F)">${icon('search')}</button>
+        <button id="save" class="btn save" data-overflow="1" title="Save highlights to the PDF" disabled>${icon('save')}<span>Save</span></button>
       </div>
     </div>
-    <div class="divider"></div>
-    <div class="group">
-      <button id="find-toggle" class="btn" title="Find (Ctrl/Cmd+F)">${icon('search')}</button>
-      <button id="save" class="btn save" title="Save highlights to the PDF" disabled>${icon('save')}<span>Save</span></button>
+    <div id="overflow" class="overflow" hidden>
+      <button id="more-button" class="btn" title="More" aria-haspopup="true" aria-expanded="false">${icon('ellipsis')}</button>
+      <div id="more-popup" class="more-popup" hidden></div>
     </div>
   </div>
 
@@ -91,6 +94,10 @@ export function createLayout() {
   document.body.insertAdjacentHTML('afterbegin', markup);
   return {
     toolbar: byId<HTMLDivElement>('toolbar'),
+    toolbarItems: byId<HTMLDivElement>('toolbar-items'),
+    overflow: byId<HTMLDivElement>('overflow'),
+    moreButton: byId<HTMLButtonElement>('more-button'),
+    morePopup: byId<HTMLDivElement>('more-popup'),
     prevPage: byId<HTMLButtonElement>('prev-page'),
     nextPage: byId<HTMLButtonElement>('next-page'),
     pageNumber: byId<HTMLInputElement>('page-number'),

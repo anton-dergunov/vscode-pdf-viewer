@@ -1,5 +1,6 @@
 import { AnnotationEditorParamsType, AnnotationEditorType } from 'pdfjs-dist';
 import { HIGHLIGHT_COLORS, type Layout } from './layout';
+import { keepInWindow } from './popup';
 import type { PdfView } from './viewer';
 
 type Tool = 'select' | 'highlight' | 'eraser';
@@ -70,6 +71,7 @@ export function setupTools(ui: Layout, view: PdfView): void {
   ui.colorButton.addEventListener('click', () => {
     ui.colorPopup.hidden = !ui.colorPopup.hidden;
     ui.colorButton.setAttribute('aria-expanded', String(!ui.colorPopup.hidden));
+    keepInWindow(ui.colorPopup);
   });
   document.addEventListener('pointerdown', (event) => {
     if (!ui.colorPopup.hidden && !(event.target as Element).closest('.color-picker')) {

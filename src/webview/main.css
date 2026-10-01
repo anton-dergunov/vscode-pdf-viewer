@@ -63,7 +63,8 @@ body {
 .toolbar {
   position: fixed;
   inset: 0 0 auto 0;
-  z-index: 100;
+  /* Above the find bar, which sits where the More popup opens. */
+  z-index: 101;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -87,16 +88,25 @@ body {
   pointer-events: auto;
 }
 
+.toolbar-items {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
 .group {
   display: flex;
   align-items: center;
   gap: 2px;
 }
 
-.divider {
+/* A divider before every group that follows a visible one; groups emptied into the More popup are hidden. */
+.toolbar-items > .group:not([hidden]) ~ .group::before {
+  content: '';
   width: 1px;
   height: 16px;
-  margin: 0 4px;
+  margin: 0 8px 0 4px;
   background: var(--widget-border);
 }
 
@@ -117,6 +127,10 @@ body {
 }
 
 .btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.btn[aria-expanded='true'] {
   background: var(--hover-bg);
 }
 
@@ -145,6 +159,14 @@ body {
 .btn.save:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.toolbar.compact .toolbar-items .btn.save {
+  padding: 0 4px;
+}
+
+.toolbar.compact .toolbar-items .btn.save span {
+  display: none;
 }
 
 .btn.small {
@@ -229,18 +251,29 @@ body {
   height: 14px;
 }
 
-.color-popup {
+.color-popup,
+.more-popup {
   position: absolute;
   top: calc(100% + 6px);
-  left: 50%;
-  translate: -50% 0;
   display: flex;
-  gap: 6px;
   padding: 6px;
   background: var(--widget-bg);
   border: 1px solid var(--widget-border);
   border-radius: 6px;
   box-shadow: 0 4px 12px var(--widget-shadow);
+  flex-wrap: wrap;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  /* Set when the popup would otherwise leave a narrow window. */
+  transform: translateX(var(--nudge, 0px));
+}
+
+.color-popup {
+  left: 50%;
+  translate: -50% 0;
+  /* Above the controls that follow it when it is inside the More popup. */
+  z-index: 1;
+  gap: 6px;
 }
 
 .swatch {
@@ -260,14 +293,28 @@ body {
   outline-offset: 2px;
 }
 
+/* ─── More popup ──────────────────────────────────────────────────────────── */
+
+.overflow {
+  position: relative;
+  flex: none;
+}
+
+.more-popup {
+  right: 0;
+  align-items: center;
+  gap: 2px;
+}
+
 /* ─── Find bar ────────────────────────────────────────────────────────────── */
 
 .findbar {
   position: fixed;
   top: 44px;
   right: 16px;
-  z-index: 101;
+  z-index: 100;
   display: flex;
+  max-width: calc(100% - 32px);
   align-items: center;
   gap: 4px;
   padding: 4px 6px;
@@ -279,6 +326,7 @@ body {
 
 .findbar input {
   width: 200px;
+  min-width: 60px;
   padding: 0 6px;
 }
 

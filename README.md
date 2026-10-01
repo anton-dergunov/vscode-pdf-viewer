@@ -24,7 +24,7 @@ page view, a toolbar that hides while you read, highlighting, search, and nothin
 
 - **Opens PDFs directly in VS Code**, in your color theme. Clicking a `.pdf` file opens it here.
 - **Auto-hiding toolbar.** Move the pointer to the top edge to reveal page navigation, zoom, tools,
-  search and save.
+  search and save. In a narrow editor the toolbar keeps the tools and moves the rest into a ⋯ menu.
 - **Highlighting** in six colors. Highlights follow the selected text exactly and are saved into
   the PDF as standard annotations, so other PDF readers and tablets show them too.
 - **Eraser.** Click any highlight to remove it, including highlights made in other apps.
