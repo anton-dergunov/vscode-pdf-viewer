@@ -14,6 +14,9 @@ import { HIGHLIGHT_COLORS } from './layout';
 /** Space kept above a destination (a section heading, a table caption) when jumping to it. */
 const DEST_CONTEXT_PX = 72;
 
+/** Zoom presets that depend on the viewer's size, so they are re-applied when it resizes. */
+const FIT_PRESETS = new Set(['page-width', 'page-fit', 'auto']);
+
 /** Owns the pdf.js viewer component and the currently loaded document. */
 export class PdfView {
   readonly eventBus = new EventBus();
@@ -57,7 +60,10 @@ export class PdfView {
       trackCommands(uiManager, () => this.onModified());
     });
     this.trackUndoShortcuts();
-    new ResizeObserver(() => this.flushPendingTarget()).observe(container);
+    new ResizeObserver(() => {
+      this.refitToContainer();
+      this.flushPendingTarget();
+    }).observe(container);
   }
 
   /**
@@ -128,6 +134,15 @@ export class PdfView {
   navigate(target: NavTarget): void {
     this.pendingTarget = target;
     this.flushPendingTarget();
+  }
+
+  /** pdf.js's viewer component doesn't re-fit on resize (its full app does), so it is done here. */
+  private refitToContainer(): void {
+    const preset = this.viewer.currentScaleValue;
+    if (!this.pagesReady || this.container.clientWidth === 0 || !FIT_PRESETS.has(preset)) {
+      return;
+    }
+    this.viewer.currentScaleValue = preset;
   }
 
   /**
