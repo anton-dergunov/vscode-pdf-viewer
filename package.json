@@ -1,11 +1,12 @@
 {
   "name": "vscode-pdf-viewer",
-  "displayName": "PDF Viewer Pro",
-  "description": "Fast, feature-rich PDF Viewer with highlighting and annotation support for VS Code powered by PDF.js.",
-  "version": "0.1.0",
-  "publisher": "prototype",
+  "displayName": "PDF Viewer",
+  "description": "Minimal PDF viewer with highlighting and search.",
+  "version": "0.2.0",
+  "publisher": "anton",
+  "license": "MIT",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.90.0"
   },
   "categories": [
     "Visualization",
@@ -13,43 +14,37 @@
   ],
   "keywords": [
     "pdf",
-    "pdf-viewer",
-    "highlight",
-    "annotate",
-    "pdfjs"
+    "viewer",
+    "highlight"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "customEditors": [
       {
         "viewType": "vscode-pdf-viewer.pdfEditor",
-        "displayName": "PDF Viewer Pro",
+        "displayName": "PDF Viewer",
         "selector": [
           {
             "filenamePattern": "*.pdf"
           }
         ],
-        "priority": "option"
-      }
-    ],
-    "commands": [
-      {
-        "command": "vscode-pdf-viewer.open",
-        "title": "PDF Viewer: Open PDF File",
-        "category": "PDF Viewer"
+        "priority": "default"
       }
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run build",
-    "build": "node esbuild.js",
-    "watch": "node esbuild.js --watch",
-    "compile": "tsc --noEmit"
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "check": "tsc -p . && tsc -p src/webview",
+    "package": "vsce package --allow-missing-repository",
+    "vscode:prepublish": "npm run check && node esbuild.mjs --production"
   },
   "devDependencies": {
-    "@types/node": "^20.10.0",
-    "@types/vscode": "^1.85.0",
-    "esbuild": "^0.20.0",
-    "typescript": "^5.3.0"
+    "@types/node": "^20.19.43",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "pdfjs-dist": "6.3.289",
+    "typescript": "^7.0.2"
   }
 }
