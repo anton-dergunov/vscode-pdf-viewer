@@ -1,0 +1,345 @@
+:root {
+  --bg-primary: var(--vscode-editor-background, #1e1e1e);
+  --fg-primary: var(--vscode-editor-foreground, #d4d4d4);
+  --toolbar-bg: var(--vscode-editorWidget-background, #252526);
+  --toolbar-border: var(--vscode-editorWidget-border, #454545);
+  --btn-hover: var(--vscode-toolbar-hoverBackground, #3c3c3c);
+  --btn-active: var(--vscode-button-background, #0e639c);
+  --btn-active-fg: var(--vscode-button-foreground, #ffffff);
+  --input-bg: var(--vscode-input-background, #3c3c3c);
+  --input-fg: var(--vscode-input-foreground, #cccccc);
+  --page-bg: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--fg-primary);
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif);
+  font-size: 13px;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  user-select: none;
+}
+
+body.theme-dark {
+  --bg-primary: #121212;
+  --page-bg: #1e1e1e;
+}
+
+/* Toolbar Styling */
+#toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  background-color: var(--toolbar-bg);
+  border-bottom: 1px solid var(--toolbar-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.toolbar-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.doc-title {
+  font-weight: 600;
+  font-size: 13px;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-primary);
+}
+
+.btn-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.divider {
+  width: 1px;
+  height: 20px;
+  background-color: var(--toolbar-border);
+  margin: 0 4px;
+}
+
+.btn {
+  background: transparent;
+  border: none;
+  color: var(--fg-primary);
+  padding: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.btn:hover {
+  background-color: var(--btn-hover);
+}
+
+.btn:active {
+  transform: scale(0.95);
+}
+
+.btn.tool-btn.active {
+  background-color: var(--btn-active);
+  color: var(--btn-active-fg);
+}
+
+.btn-save {
+  background-color: #28a745;
+  color: white;
+  padding: 5px 12px;
+  gap: 6px;
+  font-weight: 500;
+  font-size: 12px;
+  border-radius: 4px;
+}
+
+.btn-save:hover {
+  background-color: #218838;
+}
+
+.page-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.page-indicator input {
+  width: 40px;
+  background: var(--input-bg);
+  color: var(--input-fg);
+  border: 1px solid var(--toolbar-border);
+  border-radius: 3px;
+  text-align: center;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.select-input {
+  background: var(--input-bg);
+  color: var(--input-fg);
+  border: 1px solid var(--toolbar-border);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-size: 12px;
+  outline: none;
+}
+
+/* Color Picker */
+.color-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.color-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.color-dot:hover {
+  transform: scale(1.2);
+}
+
+.color-dot.active {
+  border-color: #ffffff;
+  transform: scale(1.25);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
+}
+
+/* Search Bar Overlay */
+.search-bar {
+  position: fixed;
+  top: 54px;
+  right: 20px;
+  background-color: var(--toolbar-bg);
+  border: 1px solid var(--toolbar-border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 1001;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.search-bar.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-10px);
+}
+
+.search-bar input {
+  background: var(--input-bg);
+  color: var(--input-fg);
+  border: 1px solid var(--toolbar-border);
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 12px;
+  width: 200px;
+  outline: none;
+}
+
+.search-count {
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.btn.sm {
+  padding: 3px;
+}
+
+.btn.sm svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed;
+  top: 48px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(30, 30, 30, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 999;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-left-color: #0e639c;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Pages Viewport Container */
+.pages-container {
+  margin-top: 48px;
+  height: calc(100vh - 48px);
+  overflow-y: auto;
+  overflow-x: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 24px 0 60px 0;
+}
+
+/* Page Wrapper */
+.page-wrapper {
+  position: relative;
+  background-color: var(--page-bg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s ease;
+}
+
+.pdf-canvas {
+  display: block;
+}
+
+/* Text Layer for Selection */
+.textLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  opacity: 1.0;
+  line-height: 1;
+  user-select: text;
+  -webkit-user-select: text;
+  z-index: 2;
+}
+
+.textLayer span {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer span::selection {
+  background: rgba(0, 122, 204, 0.3);
+  color: transparent;
+}
+
+/* Highlight Layer */
+.highlight-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.highlight-rect {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  mix-blend-mode: multiply;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, outline 0.15s ease;
+}
+
+.highlight-rect:hover {
+  opacity: 0.85;
+  outline: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+body.eraser-mode .highlight-rect {
+  cursor: crosshair !important;
+}
+
+body.eraser-mode .highlight-rect:hover {
+  opacity: 0.9;
+  outline: 2px solid red;
+}
