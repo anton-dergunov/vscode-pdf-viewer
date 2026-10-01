@@ -1,213 +1,303 @@
 (function () {
+  'use strict';
   const vscode = acquireVsCodeApi();
 
+  // ─── State ────────────────────────────────────────────────────────────────
   let pdfDoc = null;
-  let pdfScale = 1.0;
+  let pdfScale = 1.0;       // logical zoom (1.0 = 100%)
   let pdfUrl = '';
   let currentPage = 1;
-  let currentTool = 'select'; // 'select', 'highlight', 'eraser'
-  let currentColor = '#ffeb3b'; // default yellow
-  let storedHighlights = {}; // pageNum -> array of highlight rects
+  let currentTool = 'select';   // 'select' | 'highlight' | 'eraser'
+  let currentColor = '#ffeb3b';
 
-  // Search state
-  let searchMatches = []; // { pageNum, matchIndex, text }
+  /**
+   * highlights[pageNum] = [{ id, pageNum, xNorm, yNorm, wNorm, hNorm, color }, …]
+   *
+   * All coords are NORMALISED to the page's 1×-scale viewport:
+   *   xNorm = screenX_in_logical_px / (pdfScale * BASE_SCALE * pageNaturalWidth)
+   *
+   * This means highlights are zoom-independent and can be converted to PDF
+   * coordinates by multiplying by the natural page dimensions.
+   */
+  let highlights = {};
+
+  /**
+   * pageNaturalDims[pageNum] = { width, height }
+   * Page dimensions at scale=1.0 (PDF user units ≈ points at 1px/pt).
+   * Used for coordinate normalisation and PDF annotation export.
+   */
+  let pageNaturalDims = {};
+
+  const renderedPages = new Set();  // pages whose canvas has been drawn
+  const BASE_SCALE = 1.5;           // base over-render factor for sharpness
+
+  // Search
+  let searchMatches = [];
   let currentMatchIndex = -1;
 
-  // DOM Elements
-  const container = document.getElementById('pages-container');
+  // Context menu
+  let ctxMenuEl = null;
+
+  // ─── DOM refs ─────────────────────────────────────────────────────────────
+  const container      = document.getElementById('pages-container');
   const loadingOverlay = document.getElementById('loading');
-  const pageNumInput = document.getElementById('page-num-input');
-  const pageCountEl = document.getElementById('page-count');
-  const zoomSelect = document.getElementById('zoom-select');
-  const docTitleEl = document.getElementById('doc-title');
+  const pageNumInput   = document.getElementById('page-num-input');
+  const pageCountEl    = document.getElementById('page-count');
+  const zoomSelect     = document.getElementById('zoom-select');
+  const docTitleEl     = document.getElementById('doc-title');
+  const searchBar      = document.getElementById('search-bar');
+  const searchInput    = document.getElementById('search-input');
+  const searchCountEl  = document.getElementById('search-results-count');
 
-  // Search Elements
-  const searchBar = document.getElementById('search-bar');
-  const searchInput = document.getElementById('search-input');
-  const searchCountEl = document.getElementById('search-results-count');
-
-  // Initialize PDF.js worker
+  // ─── PDF.js worker ────────────────────────────────────────────────────────
   if (typeof pdfjsLib !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = getPdfWorkerUri();
-  }
-
-  function getPdfWorkerUri() {
-    const scripts = document.getElementsByTagName('script');
-    for (let s of scripts) {
-      if (s.src && s.src.includes('pdf.min.js')) {
-        return s.src.replace('pdf.min.js', 'pdf.worker.min.js');
-      }
+    const scripts = Array.from(document.scripts);
+    const pdfScript = scripts.find((s) => s.src && s.src.includes('pdf.min.js'));
+    if (pdfScript) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfScript.src.replace('pdf.min.js', 'pdf.worker.min.js');
     }
-    return 'dist/media/pdfjs/pdf.worker.min.js';
   }
 
-  // Handle messages from VS Code Extension Host
+  // ─── VS Code message bus ──────────────────────────────────────────────────
   window.addEventListener('message', (event) => {
-    const message = event.data;
-    switch (message.command) {
-      case 'loadPdf':
-        pdfUrl = message.url;
-        if (message.title) {
-          docTitleEl.innerText = message.title;
-        }
-        if (Array.isArray(message.highlights)) {
-          // Convert array of highlights to map by page
-          storedHighlights = {};
-          message.highlights.forEach((h) => {
-            if (!storedHighlights[h.pageNum]) {
-              storedHighlights[h.pageNum] = [];
-            }
-            storedHighlights[h.pageNum].push(h);
-          });
-        }
-        renderPdf();
-        break;
+    const msg = event.data;
+    if (msg.command !== 'loadPdf') return;
+
+    pdfUrl = msg.url;
+    if (msg.title) docTitleEl.innerText = msg.title;
+
+    if (Array.isArray(msg.highlights)) {
+      highlights = {};
+      msg.highlights.forEach((h) => {
+        if (!highlights[h.pageNum]) highlights[h.pageNum] = [];
+        highlights[h.pageNum].push(h);
+      });
     }
+
+    loadPdf();
   });
 
-  // Signal ready to provider
-  window.onload = () => {
-    vscode.postMessage({ command: 'ready' });
-  };
+  window.onload = () => vscode.postMessage({ command: 'ready' });
 
-  // Main Render PDF Function
-  async function renderPdf() {
+  // ─── Load & render PDF ────────────────────────────────────────────────────
+  async function loadPdf() {
+    loadingOverlay.style.display = 'flex';
+    container.innerHTML = '';
+    renderedPages.clear();
+
     try {
-      loadingOverlay.style.display = 'flex';
-      container.innerHTML = '';
-
       pdfDoc = await pdfjsLib.getDocument({ url: pdfUrl }).promise;
-      pageCountEl.innerText = pdfDoc.numPages;
-      pageNumInput.max = pdfDoc.numPages;
+      const n = pdfDoc.numPages;
+      pageCountEl.innerText = n;
+      pageNumInput.max = n;
 
-      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-        const pageWrapper = createPageDOM(pageNum);
-        container.appendChild(pageWrapper);
-        await renderPage(pageNum);
-      }
+      // Build all page placeholders so scrollbar is correct from the start
+      for (let i = 1; i <= n; i++) container.appendChild(buildPageShell(i));
 
-      setupIntersectionObserver();
+      // Render page 1 immediately → hide loading overlay ASAP
+      await renderPage(1);
       loadingOverlay.style.display = 'none';
+
+      // Lazy-render the rest as they scroll into view
+      setupLazyRender();
     } catch (err) {
-      console.error('Error rendering PDF:', err);
-      loadingOverlay.style.display = 'none';
-      vscode.postMessage({ command: 'showError', text: 'Failed to load PDF: ' + err.message });
+      console.error(err);
+      document.getElementById('loading-text').innerText = 'Failed to open PDF: ' + err.message;
+      vscode.postMessage({ command: 'showError', text: err.message });
     }
   }
 
-  // Create DOM nodes for a PDF page
-  function createPageDOM(pageNum) {
+  function buildPageShell(pageNum) {
     const wrapper = document.createElement('div');
     wrapper.className = 'page-wrapper';
-    wrapper.id = `page-wrapper-${pageNum}`;
-    wrapper.dataset.pageNum = pageNum;
+    wrapper.id = `pw-${pageNum}`;
+    wrapper.dataset.pageNum = String(pageNum);
+    // Rough placeholder height keeps scroll position reasonable before render
+    wrapper.style.minHeight = '1000px';
 
     const canvas = document.createElement('canvas');
     canvas.className = 'pdf-canvas';
-    canvas.id = `canvas-${pageNum}`;
+    canvas.id = `cv-${pageNum}`;
 
     const textLayer = document.createElement('div');
     textLayer.className = 'textLayer';
-    textLayer.id = `text-layer-${pageNum}`;
+    textLayer.id = `tl-${pageNum}`;
 
-    const highlightLayer = document.createElement('div');
-    highlightLayer.className = 'highlight-layer';
-    highlightLayer.id = `highlight-layer-${pageNum}`;
+    const hlLayer = document.createElement('div');
+    hlLayer.className = 'highlight-layer';
+    hlLayer.id = `hl-${pageNum}`;
 
-    wrapper.appendChild(canvas);
-    wrapper.appendChild(textLayer);
-    wrapper.appendChild(highlightLayer);
-
+    wrapper.append(canvas, textLayer, hlLayer);
     return wrapper;
   }
 
-  // Render an individual page with HiDPI/Retina support
+  function setupLazyRender() {
+    const obs = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(async (entry) => {
+          const pn = parseInt(entry.target.dataset.pageNum, 10);
+          if (entry.isIntersecting) {
+            // Update page indicator
+            currentPage = pn;
+            pageNumInput.value = String(pn);
+            // Lazy render
+            if (!renderedPages.has(pn)) await renderPage(pn);
+          }
+        });
+      },
+      { threshold: 0.05, rootMargin: '300px' }
+    );
+    document.querySelectorAll('.page-wrapper').forEach((el) => obs.observe(el));
+  }
+
+  // ─── Page rendering ───────────────────────────────────────────────────────
   async function renderPage(pageNum) {
+    if (renderedPages.has(pageNum)) return;
+    renderedPages.add(pageNum);
+
     const page = await pdfDoc.getPage(pageNum);
     const dpr = window.devicePixelRatio || 1;
-    const viewport = page.getViewport({ scale: pdfScale * 1.5 });
 
-    // Logical (CSS) dimensions
-    const logicalWidth = viewport.width;
-    const logicalHeight = viewport.height;
+    // Natural viewport (scale=1.0) → PDF coordinate space
+    const naturalVp = page.getViewport({ scale: 1.0 });
+    pageNaturalDims[pageNum] = { width: naturalVp.width, height: naturalVp.height };
 
-    // Physical pixel dimensions (canvas buffer size)
-    const physicalWidth = Math.floor(logicalWidth * dpr);
-    const physicalHeight = Math.floor(logicalHeight * dpr);
+    // Render viewport at user-chosen scale + base over-render
+    const renderVp = page.getViewport({ scale: pdfScale * BASE_SCALE });
+    const logW = renderVp.width;
+    const logH = renderVp.height;
 
-    const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
-    const canvas = document.getElementById(`canvas-${pageNum}`);
-    const textLayer = document.getElementById(`text-layer-${pageNum}`);
-    const highlightLayer = document.getElementById(`highlight-layer-${pageNum}`);
+    const wrapper  = document.getElementById(`pw-${pageNum}`);
+    const canvas   = document.getElementById(`cv-${pageNum}`);
+    const textLayer = document.getElementById(`tl-${pageNum}`);
+    const hlLayer  = document.getElementById(`hl-${pageNum}`);
 
-    // Wrapper and overlay layers use logical (CSS) dimensions
-    wrapper.style.width = `${logicalWidth}px`;
-    wrapper.style.height = `${logicalHeight}px`;
+    // Wrapper / overlay layers → logical CSS size
+    wrapper.style.width  = `${logW}px`;
+    wrapper.style.height = `${logH}px`;
+    wrapper.style.minHeight = '';
 
-    // Canvas buffer is at full physical resolution
-    canvas.width = physicalWidth;
-    canvas.height = physicalHeight;
-    // But CSS display size is logical — browser scales it down for sharpness
-    canvas.style.width = `${logicalWidth}px`;
-    canvas.style.height = `${logicalHeight}px`;
+    textLayer.style.width  = `${logW}px`;
+    textLayer.style.height = `${logH}px`;
+    hlLayer.style.width  = `${logW}px`;
+    hlLayer.style.height = `${logH}px`;
 
-    textLayer.style.width = `${logicalWidth}px`;
-    textLayer.style.height = `${logicalHeight}px`;
+    // Canvas buffer → physical pixels (HiDPI)
+    canvas.width  = Math.floor(logW * dpr);
+    canvas.height = Math.floor(logH * dpr);
+    canvas.style.width  = `${logW}px`;
+    canvas.style.height = `${logH}px`;
 
-    highlightLayer.style.width = `${logicalWidth}px`;
-    highlightLayer.style.height = `${logicalHeight}px`;
-
-    // Scale the 2D context by DPR so PDF.js draws at full physical resolution
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    await page.render({ canvasContext: ctx, viewport }).promise;
+    await page.render({ canvasContext: ctx, viewport: renderVp }).promise;
 
-    // Render Text Layer for text selection (uses logical viewport)
+    // Text layer
     textLayer.innerHTML = '';
     const textContent = await page.getTextContent();
     if (pdfjsLib.renderTextLayer) {
-      const renderTask = pdfjsLib.renderTextLayer({
-        textContent: textContent,
+      await pdfjsLib.renderTextLayer({
+        textContent,
         container: textLayer,
-        viewport: viewport,
+        viewport: renderVp,
         textDivs: [],
-      });
-      await renderTask.promise;
+      }).promise;
     }
 
-    // Render existing highlights for this page
     renderHighlightsForPage(pageNum);
   }
 
-  // Render highlights onto page's highlight layer
+  // Re-render all pages after a zoom change
+  async function reRenderAll() {
+    if (!pdfDoc) return;
+    renderedPages.clear();
+    for (let i = 1; i <= pdfDoc.numPages; i++) await renderPage(i);
+  }
+
+  // ─── Highlight rendering ──────────────────────────────────────────────────
+  /**
+   * Paints all highlights for a page onto its highlight layer.
+   * Converts from normalised [0,1] → current logical pixel coords.
+   */
   function renderHighlightsForPage(pageNum) {
-    const highlightLayer = document.getElementById(`highlight-layer-${pageNum}`);
-    if (!highlightLayer) return;
-    highlightLayer.innerHTML = '';
+    const hlLayer = document.getElementById(`hl-${pageNum}`);
+    if (!hlLayer) return;
+    hlLayer.innerHTML = '';
 
-    const pageHighlights = storedHighlights[pageNum] || [];
-    pageHighlights.forEach((h) => {
-      const rect = document.createElement('div');
-      rect.className = 'highlight-rect';
-      rect.dataset.id = h.id;
-      rect.style.left = `${h.x}px`;
-      rect.style.top = `${h.y}px`;
-      rect.style.width = `${h.w}px`;
-      rect.style.height = `${h.h}px`;
-      rect.style.backgroundColor = h.color;
+    const logW = parseFloat(hlLayer.style.width)  || 0;
+    const logH = parseFloat(hlLayer.style.height) || 0;
+    if (!logW || !logH) return;
 
-      rect.addEventListener('click', (e) => {
+    (highlights[pageNum] || []).forEach((h) => {
+      const el = document.createElement('div');
+      el.className = 'highlight-rect';
+      el.dataset.id = h.id;
+      el.style.left   = `${h.xNorm * logW}px`;
+      el.style.top    = `${h.yNorm * logH}px`;
+      el.style.width  = `${h.wNorm * logW}px`;
+      el.style.height = `${h.hNorm * logH}px`;
+      el.style.backgroundColor = h.color;
+
+      // Left-click in eraser mode → delete
+      el.addEventListener('click', (e) => {
         if (currentTool === 'eraser') {
           e.stopPropagation();
-          deleteHighlight(pageNum, h.id);
+          removeHighlight(pageNum, h.id);
         }
       });
 
-      highlightLayer.appendChild(rect);
+      // Right-click → context menu with delete option
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showContextMenu(e.clientX, e.clientY, pageNum, h.id);
+      });
+
+      hlLayer.appendChild(el);
     });
   }
 
-  // Highlighting Selection Listener
+  // ─── Highlight context menu ───────────────────────────────────────────────
+  function showContextMenu(x, y, pageNum, hlId) {
+    dismissContextMenu();
+
+    const menu = document.createElement('div');
+    menu.className = 'highlight-ctx-menu';
+    // Keep menu within viewport
+    menu.style.left = `${Math.min(x, window.innerWidth - 160)}px`;
+    menu.style.top  = `${Math.min(y, window.innerHeight - 60)}px`;
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'ctx-menu-item danger';
+    deleteBtn.innerHTML =
+      `<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm2.46-7.12l1.41-1.41L12 12.59l2.12-2.12 1.41 1.41L13.41 14l2.12 2.12-1.41 1.41L12 15.41l-2.12 2.12-1.41-1.41L10.59 14l-2.13-2.12zM15.5 4l-1-1h-5l-1 1H5v2h14V4z"/></svg> Delete highlight`;
+    deleteBtn.addEventListener('click', () => {
+      removeHighlight(pageNum, hlId);
+      dismissContextMenu();
+    });
+
+    menu.appendChild(deleteBtn);
+    document.body.appendChild(menu);
+    ctxMenuEl = menu;
+
+    // Dismiss on any outside click
+    requestAnimationFrame(() =>
+      document.addEventListener('click', dismissContextMenu, { once: true })
+    );
+  }
+
+  function dismissContextMenu() {
+    if (ctxMenuEl) { ctxMenuEl.remove(); ctxMenuEl = null; }
+  }
+
+  function removeHighlight(pageNum, id) {
+    if (!highlights[pageNum]) return;
+    highlights[pageNum] = highlights[pageNum].filter((h) => h.id !== id);
+    renderHighlightsForPage(pageNum);
+    persistHighlights(false);
+  }
+
+  // ─── Text selection → highlight creation ─────────────────────────────────
   document.addEventListener('mouseup', () => {
     if (currentTool !== 'highlight') return;
 
@@ -215,196 +305,246 @@
     if (!sel || sel.isCollapsed) return;
 
     const range = sel.getRangeAt(0);
-    const startNode = range.startContainer;
-    const textLayer = startNode.parentElement ? startNode.parentElement.closest('.textLayer') : null;
-    if (!textLayer) return;
+    const textLayerEl = range.startContainer.parentElement?.closest('.textLayer');
+    if (!textLayerEl) { sel.removeAllRanges(); return; }
 
-    const wrapper = textLayer.closest('.page-wrapper');
-    if (!wrapper) return;
+    const wrapper = textLayerEl.closest('.page-wrapper');
+    if (!wrapper) { sel.removeAllRanges(); return; }
 
-    const pageNum = parseInt(wrapper.dataset.pageNum);
+    const pageNum = parseInt(wrapper.dataset.pageNum, 10);
     const wrapRect = wrapper.getBoundingClientRect();
-    const rects = range.getClientRects();
+    const logW = parseFloat(wrapper.style.width);
+    const logH = parseFloat(wrapper.style.height);
 
-    if (!storedHighlights[pageNum]) {
-      storedHighlights[pageNum] = [];
-    }
+    if (!highlights[pageNum]) highlights[pageNum] = [];
 
-    let addedAny = false;
-    for (let i = 0; i < rects.length; i++) {
-      const r = rects[i];
-      if (r.width < 2 || r.h < 2) continue;
-
-      const hObj = {
-        id: 'hl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-        pageNum: pageNum,
-        x: r.left - wrapRect.left,
-        y: r.top - wrapRect.top,
-        w: r.width,
-        h: r.height,
+    let added = false;
+    for (const r of range.getClientRects()) {
+      if (r.width < 2 || r.height < 2) continue;
+      highlights[pageNum].push({
+        id: `hl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        pageNum,
+        xNorm: (r.left - wrapRect.left) / logW,
+        yNorm: (r.top  - wrapRect.top)  / logH,
+        wNorm: r.width  / logW,
+        hNorm: r.height / logH,
         color: currentColor,
-      };
-
-      storedHighlights[pageNum].push(hObj);
-      addedAny = true;
+      });
+      added = true;
     }
 
-    if (addedAny) {
+    if (added) {
       renderHighlightsForPage(pageNum);
-      saveHighlights(false);
+      persistHighlights(false);
     }
-
     sel.removeAllRanges();
   });
 
-  // Delete a highlight
-  function deleteHighlight(pageNum, highlightId) {
-    if (!storedHighlights[pageNum]) return;
-    storedHighlights[pageNum] = storedHighlights[pageNum].filter((h) => h.id !== highlightId);
-    renderHighlightsForPage(pageNum);
-    saveHighlights(false);
+  // ─── Persist highlights (JSON sidecar) ───────────────────────────────────
+  function persistHighlights(notify = false) {
+    const all = Object.values(highlights).flat();
+    vscode.postMessage({ command: 'saveHighlights', highlights: all, notify });
   }
 
-  // Save highlights payload to extension host
-  function saveHighlights(notify = false) {
-    const allHighlights = [];
-    Object.keys(storedHighlights).forEach((p) => {
-      allHighlights.push(...storedHighlights[p]);
-    });
-    vscode.postMessage({
-      command: 'saveHighlights',
-      highlights: allHighlights,
-      notify: notify,
-    });
-  }
-
-  // Toolbar Tool Buttons
+  // ─── Tool buttons ─────────────────────────────────────────────────────────
   document.querySelectorAll('.tool-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tool-btn').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       currentTool = btn.dataset.tool;
-
-      document.body.classList.remove('eraser-mode');
-      if (currentTool === 'eraser') {
-        document.body.classList.add('eraser-mode');
-      }
+      document.body.classList.toggle('eraser-mode', currentTool === 'eraser');
     });
   });
 
-  // Color Selector Dots
+  // ─── Color picker ─────────────────────────────────────────────────────────
   document.querySelectorAll('.color-dot').forEach((dot) => {
     dot.addEventListener('click', () => {
       document.querySelectorAll('.color-dot').forEach((d) => d.classList.remove('active'));
       dot.classList.add('active');
       currentColor = dot.dataset.color;
-
-      // Switch to highlight tool automatically if in select mode
-      if (currentTool === 'select') {
-        document.querySelector('[data-tool="highlight"]').click();
+      // Auto-switch to highlight tool when a color is picked
+      if (currentTool !== 'highlight') {
+        document.querySelector('[data-tool="highlight"]')?.click();
       }
     });
   });
 
-  // Zoom Controls
-  document.getElementById('btn-zoom-in').addEventListener('click', () => {
-    pdfScale = Math.min(pdfScale + 0.25, 3.0);
-    updateZoom();
+  // ─── Zoom ─────────────────────────────────────────────────────────────────
+  function syncZoomSelect(scale) {
+    // Try to select an existing option that matches
+    for (const opt of zoomSelect.options) {
+      const v = parseFloat(opt.value);
+      if (!isNaN(v) && Math.abs(v - scale) < 0.01) {
+        zoomSelect.value = opt.value;
+        return;
+      }
+    }
+    // Inject / reuse a "custom" option
+    let custom = zoomSelect.querySelector('option[data-custom]');
+    if (!custom) {
+      custom = document.createElement('option');
+      custom.dataset.custom = '1';
+      zoomSelect.appendChild(custom);
+    }
+    custom.value = String(scale);
+    custom.text  = `${Math.round(scale * 100)}%`;
+    zoomSelect.value = String(scale);
+  }
+
+  async function applyZoom(jumpTo) {
+    syncZoomSelect(pdfScale);
+    if (!pdfDoc) return;
+    renderedPages.clear();
+    for (let i = 1; i <= pdfDoc.numPages; i++) await renderPage(i);
+    if (jumpTo) jumpToPage(jumpTo);
+  }
+
+  document.getElementById('btn-zoom-in').addEventListener('click', async () => {
+    pdfScale = Math.min(+(pdfScale + 0.25).toFixed(2), 4.0);
+    await applyZoom(currentPage);
   });
 
-  document.getElementById('btn-zoom-out').addEventListener('click', () => {
-    pdfScale = Math.max(pdfScale - 0.25, 0.5);
-    updateZoom();
+  document.getElementById('btn-zoom-out').addEventListener('click', async () => {
+    pdfScale = Math.max(+(pdfScale - 0.25).toFixed(2), 0.25);
+    await applyZoom(currentPage);
   });
 
-  zoomSelect.addEventListener('change', () => {
+  zoomSelect.addEventListener('change', async () => {
     const val = zoomSelect.value;
-    if (val === 'auto' || val === 'page-fit' || val === 'page-width') {
-      pdfScale = 1.0;
+    if (val === 'page-fit' || val === 'page-width') {
+      if (pdfDoc) {
+        const page = await pdfDoc.getPage(1);
+        const natVp = page.getViewport({ scale: 1.0 });
+        const availW = container.clientWidth - 48;
+        pdfScale = +(availW / (natVp.width * BASE_SCALE)).toFixed(3);
+      }
     } else {
       pdfScale = parseFloat(val);
     }
-    updateZoom();
+    await applyZoom(currentPage);
   });
 
-  async function updateZoom() {
-    if (!pdfDoc) return;
-    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-      await renderPage(pageNum);
-    }
-  }
-
-  // Page Navigation Controls
+  // ─── Page navigation ──────────────────────────────────────────────────────
   document.getElementById('btn-prev').addEventListener('click', () => {
-    if (currentPage > 1) {
-      jumpToPage(currentPage - 1);
-    }
+    if (currentPage > 1) jumpToPage(currentPage - 1);
   });
-
   document.getElementById('btn-next').addEventListener('click', () => {
-    if (pdfDoc && currentPage < pdfDoc.numPages) {
-      jumpToPage(currentPage + 1);
-    }
+    if (pdfDoc && currentPage < pdfDoc.numPages) jumpToPage(currentPage + 1);
   });
-
   pageNumInput.addEventListener('change', () => {
-    const val = parseInt(pageNumInput.value);
-    if (!isNaN(val) && val >= 1 && val <= (pdfDoc ? pdfDoc.numPages : 1)) {
-      jumpToPage(val);
+    const v = parseInt(pageNumInput.value, 10);
+    if (!isNaN(v) && pdfDoc && v >= 1 && v <= pdfDoc.numPages) jumpToPage(v);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target === pageNumInput || e.target === searchInput) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (pdfDoc && currentPage < pdfDoc.numPages) jumpToPage(currentPage + 1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (currentPage > 1) jumpToPage(currentPage - 1);
     }
   });
 
-  function jumpToPage(pageNum) {
-    const el = document.getElementById(`page-wrapper-${pageNum}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-      currentPage = pageNum;
-      pageNumInput.value = pageNum;
-    }
+  function jumpToPage(n) {
+    const el = document.getElementById(`pw-${n}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    currentPage = n;
+    pageNumInput.value = String(n);
   }
 
-  // IntersectionObserver to update current page indicator on scroll
-  function setupIntersectionObserver() {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const pageNum = parseInt(entry.target.dataset.pageNum);
-            currentPage = pageNum;
-            pageNumInput.value = pageNum;
-          }
-        });
-      },
-      { threshold: 0.5 }
-    );
-
-    document.querySelectorAll('.page-wrapper').forEach((el) => observer.observe(el));
-  }
-
-  // Theme Toggle
+  // ─── Theme toggle ─────────────────────────────────────────────────────────
   document.getElementById('btn-theme').addEventListener('click', () => {
     document.body.classList.toggle('theme-dark');
   });
 
-  // Manual Save Button
-  document.getElementById('btn-save').addEventListener('click', () => {
-    saveHighlights(true);
-  });
+  // ─── Save to PDF (pdf-lib annotations) ───────────────────────────────────
+  document.getElementById('btn-save-pdf').addEventListener('click', saveHighlightsToPdf);
 
-  // Search Functionality
-  const searchToggleBtn = document.getElementById('btn-search-toggle');
-  const searchCloseBtn = document.getElementById('btn-search-close');
-  const searchPrevBtn = document.getElementById('btn-search-prev');
-  const searchNextBtn = document.getElementById('btn-search-next');
-
-  searchToggleBtn.addEventListener('click', () => {
-    searchBar.classList.toggle('hidden');
-    if (!searchBar.classList.contains('hidden')) {
-      searchInput.focus();
+  async function saveHighlightsToPdf() {
+    const Lib = window.PDFLib;
+    if (!Lib) {
+      vscode.postMessage({ command: 'showError', text: 'pdf-lib not loaded.' });
+      return;
     }
-  });
 
-  searchCloseBtn.addEventListener('click', () => {
+    const allH = Object.values(highlights).flat();
+    if (!allH.length) {
+      vscode.postMessage({ command: 'showError', text: 'No highlights to save.' });
+      return;
+    }
+
+    try {
+      const resp = await fetch(pdfUrl);
+      const buf  = await resp.arrayBuffer();
+      const doc  = await Lib.PDFDocument.load(buf);
+      const pages = doc.getPages();
+
+      // Group by page
+      const byPage = {};
+      allH.forEach((h) => { (byPage[h.pageNum] = byPage[h.pageNum] || []).push(h); });
+
+      for (const [pnStr, pHl] of Object.entries(byPage)) {
+        const pn  = parseInt(pnStr, 10);
+        const pdfPage = pages[pn - 1];
+        const dims = pageNaturalDims[pn];
+        if (!pdfPage || !dims) continue;
+
+        const { width: natW, height: natH } = dims;
+
+        // Fetch or create Annots array
+        const PDFName  = Lib.PDFName;
+        const PDFArray = Lib.PDFArray;
+        let annots = pdfPage.node.lookupMaybe(PDFName.of('Annots'), PDFArray);
+        if (!annots) {
+          annots = doc.context.obj([]);
+          pdfPage.node.set(PDFName.of('Annots'), annots);
+        }
+
+        for (const h of pHl) {
+          // Convert normalised [0,1] → PDF coordinates (origin = bottom-left)
+          const x1 = h.xNorm * natW;
+          const x2 = (h.xNorm + h.wNorm) * natW;
+          const y2 = natH - h.yNorm * natH;              // top
+          const y1 = natH - (h.yNorm + h.hNorm) * natH; // bottom
+
+          const [r, g, b] = hexToRgbFloat(h.color);
+
+          const annotDict = doc.context.obj({
+            Type:       'Annot',
+            Subtype:    'Highlight',
+            Rect:       [x1, y1, x2, y2],
+            // QuadPoints: four corners of each quad (single rect here)
+            QuadPoints: [x1, y2, x2, y2, x1, y1, x2, y1],
+            C:          [r, g, b],
+            CA:         0.5,
+            F:          4,   // Print flag
+          });
+          annots.push(doc.context.register(annotDict));
+        }
+      }
+
+      const outBytes = await doc.save();
+      vscode.postMessage({ command: 'savePdfBytes', data: Array.from(outBytes) });
+    } catch (err) {
+      console.error(err);
+      vscode.postMessage({ command: 'showError', text: 'Error saving PDF: ' + err.message });
+    }
+  }
+
+  function hexToRgbFloat(hex) {
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return m ? [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255] : [1, 1, 0];
+  }
+
+  // ─── Search ───────────────────────────────────────────────────────────────
+  document.getElementById('btn-search-toggle').addEventListener('click', () => {
+    searchBar.classList.toggle('hidden');
+    if (!searchBar.classList.contains('hidden')) searchInput.focus();
+  });
+  document.getElementById('btn-search-close').addEventListener('click', () => {
     searchBar.classList.add('hidden');
   });
 
@@ -414,44 +554,42 @@
       searchBar.classList.remove('hidden');
       searchInput.focus();
     }
+    if (e.key === 'Escape' && !searchBar.classList.contains('hidden')) {
+      searchBar.classList.add('hidden');
+    }
   });
 
   searchInput.addEventListener('input', async () => {
-    const query = searchInput.value.trim().toLowerCase();
+    const q = searchInput.value.trim().toLowerCase();
     searchMatches = [];
     currentMatchIndex = -1;
+    searchCountEl.innerText = '0 / 0';
+    if (!q || !pdfDoc) return;
 
-    if (!query || !pdfDoc) {
-      searchCountEl.innerText = '0 / 0';
-      return;
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      const page = await pdfDoc.getPage(i);
+      const tc   = await page.getTextContent();
+      const text = tc.items.map((t) => t.str).join(' ').toLowerCase();
+      if (text.includes(q)) searchMatches.push({ pageNum: i });
     }
 
-    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-      const page = await pdfDoc.getPage(pageNum);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map((item) => item.str).join(' ').toLowerCase();
-
-      if (pageText.includes(query)) {
-        searchMatches.push({ pageNum, query });
-      }
-    }
-
-    searchCountEl.innerText = searchMatches.length > 0 ? `1 / ${searchMatches.length}` : '0 / 0';
-    if (searchMatches.length > 0) {
+    if (searchMatches.length) {
       currentMatchIndex = 0;
+      searchCountEl.innerText = `1 / ${searchMatches.length}`;
       jumpToPage(searchMatches[0].pageNum);
+    } else {
+      searchCountEl.innerText = '0 / 0';
     }
   });
 
-  searchNextBtn.addEventListener('click', () => {
-    if (searchMatches.length === 0) return;
+  document.getElementById('btn-search-next').addEventListener('click', () => {
+    if (!searchMatches.length) return;
     currentMatchIndex = (currentMatchIndex + 1) % searchMatches.length;
     searchCountEl.innerText = `${currentMatchIndex + 1} / ${searchMatches.length}`;
     jumpToPage(searchMatches[currentMatchIndex].pageNum);
   });
-
-  searchPrevBtn.addEventListener('click', () => {
-    if (searchMatches.length === 0) return;
+  document.getElementById('btn-search-prev').addEventListener('click', () => {
+    if (!searchMatches.length) return;
     currentMatchIndex = (currentMatchIndex - 1 + searchMatches.length) % searchMatches.length;
     searchCountEl.innerText = `${currentMatchIndex + 1} / ${searchMatches.length}`;
     jumpToPage(searchMatches[currentMatchIndex].pageNum);

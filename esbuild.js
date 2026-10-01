@@ -55,6 +55,10 @@ async function main() {
       path.join(__dirname, 'media/pdfjs/pdf.worker.min.js'),
       path.join(pdfjsDistDir, 'pdf.worker.min.js')
     );
+    fs.copyFileSync(
+      path.join(__dirname, 'media/pdfjs/pdf-lib.min.js'),
+      path.join(pdfjsDistDir, 'pdf-lib.min.js')
+    );
 
     console.log('[esbuild] Copied webview static assets & pdfjs runtime.');
   }

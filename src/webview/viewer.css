@@ -343,3 +343,51 @@ body.eraser-mode .highlight-rect:hover {
   opacity: 0.9;
   outline: 2px solid red;
 }
+
+/* Page separator text */
+.page-sep {
+  color: var(--fg-primary);
+  opacity: 0.6;
+  font-size: 12px;
+}
+
+/* Highlight right-click context menu */
+.highlight-ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  background: var(--toolbar-bg);
+  border: 1px solid var(--toolbar-border);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  min-width: 150px;
+}
+
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: var(--fg-primary);
+  cursor: pointer;
+  padding: 7px 10px;
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.ctx-menu-item:hover {
+  background: var(--btn-hover);
+}
+
+.ctx-menu-item.danger {
+  color: #f48771;
+}
+
+.ctx-menu-item.danger:hover {
+  background: rgba(244, 135, 113, 0.15);
+}
+

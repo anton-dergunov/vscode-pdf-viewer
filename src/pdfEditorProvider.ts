@@ -42,6 +42,9 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider<Pd
     const pdfJsUri = webviewPanel.webview.asWebviewUri(
       vscode.Uri.joinPath(extensionUri, 'dist', 'media', 'pdfjs', 'pdf.min.js')
     );
+    const pdfLibUri = webviewPanel.webview.asWebviewUri(
+      vscode.Uri.joinPath(extensionUri, 'dist', 'media', 'pdfjs', 'pdf-lib.min.js')
+    );
     const pdfWorkerUri = webviewPanel.webview.asWebviewUri(
       vscode.Uri.joinPath(extensionUri, 'dist', 'media', 'pdfjs', 'pdf.worker.min.js')
     );
@@ -64,6 +67,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider<Pd
       .replace(/{{nonce}}/g, nonce)
       .replace(/{{cspSource}}/g, webviewPanel.webview.cspSource)
       .replace(/{{pdfJsUri}}/g, pdfJsUri.toString())
+      .replace(/{{pdfLibUri}}/g, pdfLibUri.toString())
       .replace(/{{pdfWorkerUri}}/g, pdfWorkerUri.toString())
       .replace(/{{viewerCssUri}}/g, viewerCssUri.toString())
       .replace(/{{viewerJsUri}}/g, viewerJsUri.toString());
@@ -108,6 +112,20 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider<Pd
           break;
         }
 
+        case 'savePdfBytes': {
+          // Save the modified PDF (with embedded highlight annotations) over the original file
+          try {
+            const buf = Buffer.from(message.data);
+            fs.writeFileSync(pdfUri.fsPath, buf);
+            vscode.window.showInformationMessage(
+              `Saved highlights to PDF: ${path.basename(pdfUri.fsPath)}`
+            );
+          } catch (err: any) {
+            vscode.window.showErrorMessage(`Failed to save PDF: ${err.message}`);
+          }
+          break;
+        }
+
         case 'showError': {
           vscode.window.showErrorMessage(`PDF Viewer: ${message.text}`);
           break;
@@ -125,3 +143,4 @@ function getNonce(): string {
   }
   return text;
 }
+
