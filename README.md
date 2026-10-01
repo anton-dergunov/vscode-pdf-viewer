@@ -3,6 +3,10 @@
 A minimal PDF viewer for VS Code. It saves your highlights into the PDF file, and its links can open a paper at
 a specific section, table, figure or page, including links in the Claude Code chat.
 
+![Claude Code's answer about a paper cites "Zep, p. 4, §3 Memory Retrieval". Clicking that link opens the PDF next to the chat at section 3, Memory Retrieval.](assets/demo.webp)
+
+*Clicking a citation in the Claude Code chat opens the paper next to it, at the cited section.*
+
 ## Why it exists
 
 I read research papers together with Claude Code in VS Code. I ask a question across several
