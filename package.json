@@ -1,10 +1,21 @@
 {
   "name": "vscode-pdf-viewer",
   "displayName": "PDF Viewer",
-  "description": "Minimal PDF viewer with highlighting and search.",
+  "description": "A minimal PDF viewer for VS Code: highlights saved into the PDF, search, and links that open a paper at a section, table or page, including from the Claude Code chat.",
   "version": "0.3.0",
   "publisher": "anton",
   "license": "MIT",
+  "author": {
+    "name": "Anton Dergunov"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anton-dergunov/vscode-pdf-viewer.git"
+  },
+  "homepage": "https://github.com/anton-dergunov/vscode-pdf-viewer#readme",
+  "bugs": {
+    "url": "https://github.com/anton-dergunov/vscode-pdf-viewer/issues"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -15,7 +26,9 @@
   "keywords": [
     "pdf",
     "viewer",
-    "highlight"
+    "highlight",
+    "annotation",
+    "claude"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
@@ -52,8 +65,8 @@
       "properties": {
         "pdfViewer.pdfRoot": {
           "type": "string",
-          "default": "~/Yandex.Disk.localized/Papers",
-          "markdownDescription": "Folder that relative `file` paths in paper links are resolved against."
+          "default": "",
+          "markdownDescription": "Folder that relative paths in PDF links are resolved against, e.g. `~/Papers`. When empty, they are resolved against the first workspace folder."
         }
       }
     }
@@ -62,7 +75,8 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "check": "tsc -p . && tsc -p src/webview",
-    "package": "vsce package --allow-missing-repository",
+    "test": "esbuild test/*.test.ts --bundle --platform=node --format=esm --outdir=out/test --out-extension:.js=.mjs --log-level=warning && node --test out/test/*.mjs",
+    "package": "vsce package",
     "vscode:prepublish": "npm run check && node esbuild.mjs --production"
   },
   "devDependencies": {

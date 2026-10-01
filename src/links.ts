@@ -20,13 +20,18 @@ export function parseTarget(uri: vscode.Uri): PdfTarget | undefined {
   return parseTargetParts(uri.path, uri.query);
 }
 
-/** Resolves an absolute path, or one relative to the `pdfViewer.pdfRoot` setting. */
-export function resolvePdfFile(file: string): vscode.Uri {
+/**
+ * Resolves an absolute path, or a relative one against the `pdfViewer.pdfRoot` setting, falling
+ * back to the first workspace folder. Returns undefined when there is nothing to resolve against.
+ */
+export function resolvePdfFile(file: string): vscode.Uri | undefined {
   const expand = (p: string) => (p === '~' || p.startsWith('~/') ? path.join(homedir(), p.slice(1)) : p);
   const expanded = expand(file);
   if (path.isAbsolute(expanded)) {
     return vscode.Uri.file(expanded);
   }
-  const root = vscode.workspace.getConfiguration('pdfViewer').get<string>('pdfRoot', '');
-  return vscode.Uri.file(path.resolve(expand(root), expanded));
+  const root =
+    vscode.workspace.getConfiguration('pdfViewer').get<string>('pdfRoot', '').trim() ||
+    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  return root ? vscode.Uri.file(path.resolve(expand(root), expanded)) : undefined;
 }

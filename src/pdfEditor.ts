@@ -119,6 +119,17 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
   /** Opens a PDF in the viewer (or reveals its tab) and goes to the requested place. */
   async open({ file, ...target }: PdfTarget): Promise<void> {
     const uri = resolvePdfFile(file);
+    if (!uri) {
+      const action = 'Open Settings';
+      const choice = await vscode.window.showErrorMessage(
+        `PDF Viewer: can't resolve "${file}". Set "pdfViewer.pdfRoot" to the folder that link paths are relative to.`,
+        action,
+      );
+      if (choice === action) {
+        void vscode.commands.executeCommand('workbench.action.openSettings', 'pdfViewer.pdfRoot');
+      }
+      return;
+    }
     try {
       await vscode.workspace.fs.stat(uri);
     } catch {
