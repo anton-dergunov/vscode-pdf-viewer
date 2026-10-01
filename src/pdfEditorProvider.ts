@@ -56,8 +56,6 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider<Pd
     );
     const pdfDocWebviewUri = webviewPanel.webview.asWebviewUri(pdfUri).toString();
 
-    const sidecarPath = pdfUri.fsPath + '.highlights.json';
-
     // Set Webview HTML Content
     const htmlPath = path.join(this.context.extensionPath, 'dist', 'webview', 'viewer.html');
     let htmlContent = fs.readFileSync(htmlPath, 'utf8');
@@ -78,50 +76,26 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider<Pd
     webviewPanel.webview.onDidReceiveMessage(async (message) => {
       switch (message.command) {
         case 'ready': {
-          let savedHighlights: any = [];
-          try {
-            if (fs.existsSync(sidecarPath)) {
-              const raw = fs.readFileSync(sidecarPath, 'utf8');
-              savedHighlights = JSON.parse(raw);
-            }
-          } catch (err) {
-            console.error('Error loading highlights sidecar:', err);
-          }
-
           webviewPanel.webview.postMessage({
             command: 'loadPdf',
             url: pdfDocWebviewUri,
             title: path.basename(pdfUri.fsPath),
-            highlights: savedHighlights,
           });
           break;
         }
 
-        case 'saveHighlights': {
-          try {
-            const dataStr = JSON.stringify(message.highlights, null, 2);
-            fs.writeFileSync(sidecarPath, dataStr, 'utf8');
-            if (message.notify) {
-              vscode.window.showInformationMessage(
-                `Saved highlights for ${path.basename(pdfUri.fsPath)}`
-              );
-            }
-          } catch (err: any) {
-            vscode.window.showErrorMessage(`Failed to save highlights: ${err.message}`);
-          }
-          break;
-        }
-
         case 'savePdfBytes': {
-          // Save the modified PDF (with embedded highlight annotations) over the original file
+          // Save the modified PDF (with embedded highlight annotations) directly to the PDF file
           try {
             const buf = Buffer.from(message.data);
             fs.writeFileSync(pdfUri.fsPath, buf);
             vscode.window.showInformationMessage(
-              `Saved highlights to PDF: ${path.basename(pdfUri.fsPath)}`
+              `Saved PDF: ${path.basename(pdfUri.fsPath)}`
             );
+            webviewPanel.webview.postMessage({ command: 'saveCompleted' });
           } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to save PDF: ${err.message}`);
+            webviewPanel.webview.postMessage({ command: 'saveFailed', error: err.message });
           }
           break;
         }

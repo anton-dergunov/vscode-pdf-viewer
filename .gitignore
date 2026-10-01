@@ -1,2 +1,3 @@
 *.pdf
 *.pdf.highlights.json
+.DS_Store
