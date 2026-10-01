@@ -2,7 +2,7 @@
   "name": "vscode-pdf-viewer",
   "displayName": "PDF Viewer",
   "description": "Minimal PDF viewer with highlighting and search.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "anton",
   "license": "MIT",
   "engines": {
@@ -18,6 +18,15 @@
     "highlight"
   ],
   "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onOpenExternalUri:http",
+    "onOpenExternalUri:https",
+    "onUri"
+  ],
+  "enabledApiProposals": [
+    "externalUriOpener"
+  ],
   "contributes": {
     "customEditors": [
       {
@@ -30,7 +39,24 @@
         ],
         "priority": "default"
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "pdfViewer.open",
+        "title": "Open PDF at a Page or Section",
+        "category": "PDF Viewer"
+      }
+    ],
+    "configuration": {
+      "title": "PDF Viewer",
+      "properties": {
+        "pdfViewer.pdfRoot": {
+          "type": "string",
+          "default": "~/Yandex.Disk.localized/Papers",
+          "markdownDescription": "Folder that relative `file` paths in paper links are resolved against."
+        }
+      }
+    }
   },
   "scripts": {
     "build": "node esbuild.mjs",

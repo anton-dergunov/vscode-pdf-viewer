@@ -16,6 +16,7 @@ setupZoom(ui, view);
 setupTools(ui, view);
 setupWheel(view);
 const search = setupSearch(ui, view);
+view.onSearch = (query) => search.openWith(query);
 
 const setDirty = (dirty: boolean) => {
   ui.save.disabled = !dirty;
@@ -60,11 +61,14 @@ onHostMessage(async (message) => {
       ui.loading.hidden = false;
       setDirty(message.dirty);
       try {
-        await view.load(message.data);
+        await view.load(message.data, message.target);
       } catch (error) {
         ui.loading.hidden = true;
         reportError(`Could not open the PDF: ${(error as Error).message}`);
       }
+      break;
+    case 'navigate':
+      view.navigate(message.target);
       break;
     case 'getBytes':
       try {

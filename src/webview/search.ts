@@ -7,7 +7,15 @@ interface MatchesCount {
   total: number;
 }
 
-export function setupSearch(ui: Layout, view: PdfView): { open(): void; close(): void; isOpen(): boolean } {
+export interface Search {
+  open(): void;
+  /** Opens the find bar with `query` and finds its next occurrence from the current page. */
+  openWith(query: string): void;
+  close(): void;
+  isOpen(): boolean;
+}
+
+export function setupSearch(ui: Layout, view: PdfView): Search {
   const { eventBus } = view;
   const { findbar, findInput, findCount } = ui;
 
@@ -96,5 +104,11 @@ export function setupSearch(ui: Layout, view: PdfView): { open(): void; close():
     },
   );
 
-  return { open, close, isOpen: () => !findbar.hidden };
+  const openWith = (query: string) => {
+    findInput.value = query;
+    findbar.hidden = false;
+    find('');
+  };
+
+  return { open, openWith, close, isOpen: () => !findbar.hidden };
 }
