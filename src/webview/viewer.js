@@ -121,34 +121,48 @@
     return wrapper;
   }
 
-  // Render an individual page
+  // Render an individual page with HiDPI/Retina support
   async function renderPage(pageNum) {
     const page = await pdfDoc.getPage(pageNum);
+    const dpr = window.devicePixelRatio || 1;
     const viewport = page.getViewport({ scale: pdfScale * 1.5 });
+
+    // Logical (CSS) dimensions
+    const logicalWidth = viewport.width;
+    const logicalHeight = viewport.height;
+
+    // Physical pixel dimensions (canvas buffer size)
+    const physicalWidth = Math.floor(logicalWidth * dpr);
+    const physicalHeight = Math.floor(logicalHeight * dpr);
 
     const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
     const canvas = document.getElementById(`canvas-${pageNum}`);
     const textLayer = document.getElementById(`text-layer-${pageNum}`);
     const highlightLayer = document.getElementById(`highlight-layer-${pageNum}`);
 
-    wrapper.style.width = `${viewport.width}px`;
-    wrapper.style.height = `${viewport.height}px`;
+    // Wrapper and overlay layers use logical (CSS) dimensions
+    wrapper.style.width = `${logicalWidth}px`;
+    wrapper.style.height = `${logicalHeight}px`;
 
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    canvas.style.width = `${viewport.width}px`;
-    canvas.style.height = `${viewport.height}px`;
+    // Canvas buffer is at full physical resolution
+    canvas.width = physicalWidth;
+    canvas.height = physicalHeight;
+    // But CSS display size is logical — browser scales it down for sharpness
+    canvas.style.width = `${logicalWidth}px`;
+    canvas.style.height = `${logicalHeight}px`;
 
-    textLayer.style.width = `${viewport.width}px`;
-    textLayer.style.height = `${viewport.height}px`;
+    textLayer.style.width = `${logicalWidth}px`;
+    textLayer.style.height = `${logicalHeight}px`;
 
-    highlightLayer.style.width = `${viewport.width}px`;
-    highlightLayer.style.height = `${viewport.height}px`;
+    highlightLayer.style.width = `${logicalWidth}px`;
+    highlightLayer.style.height = `${logicalHeight}px`;
 
+    // Scale the 2D context by DPR so PDF.js draws at full physical resolution
     const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     await page.render({ canvasContext: ctx, viewport }).promise;
 
-    // Render Text Layer for text selection
+    // Render Text Layer for text selection (uses logical viewport)
     textLayer.innerHTML = '';
     const textContent = await page.getTextContent();
     if (pdfjsLib.renderTextLayer) {
