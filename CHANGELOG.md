@@ -2,6 +2,13 @@
 
 All notable changes to PDF Viewer are listed here.
 
+## [Unreleased]
+
+### Fixed
+
+- A link to a PDF that is already open now goes to its tab also when the PDF was opened through
+  a symlinked folder, instead of opening the same PDF a second time.
+
 ## [0.3.0] - 2026-10-01
 
 Open a paper at the exact place being discussed: a section, a table, a figure or a page.

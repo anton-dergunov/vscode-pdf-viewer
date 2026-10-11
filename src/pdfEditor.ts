@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { resolvePdfFile, type PdfTarget } from './links';
+import { canonicalPath } from './realPath';
 import type { HostMessage, NavTarget, WebviewMessage } from './shared/messages';
 
 /** A PDF file opened in the viewer. The webview owns the live state; this side owns file I/O. */
@@ -18,6 +19,8 @@ class PdfDocument implements vscode.CustomDocument {
 
   constructor(
     readonly uri: vscode.Uri,
+    /** The file with symlinks resolved: a link may reach it by another path than the one it was opened by. */
+    readonly realPath: string,
     /** The bytes the webview should show next time it (re)loads. */
     public data: Uint8Array,
     /** Whether the viewer holds unsaved changes. */
@@ -103,13 +106,18 @@ async function readFile(uri: vscode.Uri): Promise<Uint8Array> {
   return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
 }
 
+/** What two URIs of one file have in common: its real path. Only a `file:` URI has one. */
+function documentPath(uri: vscode.Uri): Promise<string> {
+  return uri.scheme === 'file' ? canonicalPath(uri.fsPath) : Promise.resolve(uri.toString());
+}
+
 export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocument> {
   static readonly viewType = 'vscode-pdf-viewer.pdfEditor';
 
   private readonly changeEmitter = new vscode.EventEmitter<vscode.CustomDocumentContentChangeEvent<PdfDocument>>();
   readonly onDidChangeCustomDocument = this.changeEmitter.event;
 
-  /** Open documents by URI, so a link to an open file navigates its tab instead of opening another. */
+  /** Open documents by URI. A link to an open file navigates its tab instead of opening another. */
   private readonly documents = new Map<string, PdfDocument>();
   /** Navigation for a document that `open()` is about to create. */
   private readonly pendingTargets = new Map<string, NavTarget>();
@@ -136,7 +144,8 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
       void vscode.window.showErrorMessage(`PDF Viewer: no file at ${uri.fsPath}`);
       return;
     }
-    const document = this.documents.get(uri.toString());
+    const realPath = await documentPath(uri);
+    const document = [...this.documents.values()].find((open) => open.panel && open.realPath === realPath);
     if (document?.panel) {
       document.panel.reveal(document.panel.viewColumn);
       document.navigate(target);
@@ -157,8 +166,12 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
   async openCustomDocument(uri: vscode.Uri, openContext: vscode.CustomDocumentOpenContext): Promise<PdfDocument> {
     const key = uri.toString();
     const source = openContext.backupId ? vscode.Uri.parse(openContext.backupId) : uri;
-    const document = new PdfDocument(uri, await readFile(source), !!openContext.backupId, () =>
-      this.documents.delete(key),
+    const document = new PdfDocument(
+      uri,
+      await documentPath(uri),
+      await readFile(source),
+      !!openContext.backupId,
+      () => this.documents.delete(key),
     );
     this.documents.set(key, document);
     const target = this.pendingTargets.get(key);
