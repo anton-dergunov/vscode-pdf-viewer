@@ -41,7 +41,8 @@ page view, a toolbar that hides while you read, highlighting, search, and nothin
 - **Reloads when the file changes on disk**, keeping your place, with a short note. If you have
   unsaved highlights, they are kept and a bar at the top says the file changed; saving then adds
   them to the newer file, so highlights made elsewhere are kept too.
-- **Links to a place in a PDF**, from the Claude Code chat or anywhere else. See below.
+- **Links to a place in a PDF**, from the Claude Code chat or anywhere else, that can mark the exact
+  sentence, value, table or figure they point to. See below.
 
 ## Install
 
@@ -58,6 +59,7 @@ API that is still in preview (see the setup below).
 ## Links to a place in a PDF
 
 ```
+http://pdf.invalid/<path>?page=<n>&rect=<x0,y0,x1,y1>;…
 http://pdf.invalid/<path>?dest=<destination>&page=<n>&search=<text>
 ```
 
@@ -66,12 +68,19 @@ http://pdf.invalid/<path>?dest=<destination>&page=<n>&search=<text>
 | `<path>` | The PDF file, relative to the `pdfViewer.pdfRoot` setting. Percent-encode it: spaces as `%20`, and `#`, `?` and `%` if present; `&` and `+` can stay as they are. For an absolute path, use `http://pdf.invalid/open?file=<absolute path>&…`. |
 | `dest` | A named destination in the PDF. Papers written in LaTeX (most of arXiv) have `section.4`, `subsection.4.3`, `subsubsection.2.2.3` and `appendix.A`, and often `table.2` and `figure.3`. |
 | `page` | The page number. Used when `dest` is missing or isn't in the PDF, so always include it. |
+| `rect` | Rectangles to mark on that page, separated by `;`: each `x0,y0,x1,y1` in points (1/72 inch) from the top-left corner of the page, as it is before any rotation. The view scrolls them into the middle. |
 | `search` | A phrase to find and mark, starting from that page. |
+
+A link with `rect` marks its place with a quiet ink-blue mark: a soft underline for a phrase or a
+value, a thin outline for a table, figure or equation. A ring draws the eye to it as it appears.
+The mark stays while you scroll and goes when you click the page, press Escape or follow another
+link. It is never saved into the PDF. [agentic-paper-library](https://github.com/anton-dergunov/agentic-paper-library)'s
+`paperlib locate` writes such links.
 
 For example, with `pdfViewer.pdfRoot` set to `~/Papers`:
 
 ```markdown
-[Zep, p. 7, Table 2](http://pdf.invalid/llm/memory/Zep.%20A%20Temporal%20Knowledge%20Graph%20Architecture%20for%20Agent%20Memory.pdf?dest=table.2&page=7)
+[Zep, p. 7, Table 2](http://pdf.invalid/llm/memory/Zep.%20A%20Temporal%20Knowledge%20Graph%20Architecture%20for%20Agent%20Memory.pdf?page=7&rect=130,306,479,397)
 ```
 
 - The paper opens as a regular tab, next to the chat when the chat is an editor tab.

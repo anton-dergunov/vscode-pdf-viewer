@@ -43,6 +43,10 @@ document.addEventListener('keydown', (event) => {
     search.close();
     return;
   }
+  if (event.key === 'Escape' && view.citeMark.visible) {
+    view.citeMark.clear(true);
+    return;
+  }
   const target = event.target as Element;
   if (mod || event.altKey || target.closest('input, select, .highlightEditor')) {
     return;

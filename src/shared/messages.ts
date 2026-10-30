@@ -1,8 +1,15 @@
-/** Where to go in a document. A named destination wins over a page when the PDF has it. */
+/** A rectangle on a page: x0, y0, x1, y1 in PDF points from the top-left of its crop box, unrotated. */
+export type Rect = [number, number, number, number];
+
+/**
+ * Where to go in a document. Rectangles on `page` are marked and decide the scroll; otherwise a
+ * named destination wins over a page when the PDF has it.
+ */
 export interface NavTarget {
   page?: number;
   dest?: string;
   search?: string;
+  rect?: Rect[];
 }
 
 /**

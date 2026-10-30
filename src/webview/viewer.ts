@@ -9,6 +9,7 @@ import {
 } from 'pdfjs-dist';
 import { EventBus, LinkTarget, PDFFindController, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import type { NavTarget } from '../shared/messages';
+import { CiteMark } from './citeMark';
 import { HIGHLIGHT_COLORS } from './layout';
 import { lineBoxes, type Box } from './lineBoxes';
 import { mergeChanges, snapshotOf, type Change, type Snapshot } from './mergePlan';
@@ -35,6 +36,8 @@ export class PdfView {
   readonly eventBus = new EventBus();
   readonly viewer: PDFViewer;
   readonly findController: PDFFindController;
+  /** The mark a citation's `rect` draws. */
+  readonly citeMark: CiteMark;
   uiManager: AnnotationEditorUIManager | null = null;
 
   private readonly linkService: PDFLinkService;
@@ -70,6 +73,7 @@ export class PdfView {
       annotationEditorHighlightColors: HIGHLIGHT_COLORS.map((c) => `${c.name}=${c.value}`).join(','),
     });
     this.linkService.setViewer(this.viewer);
+    this.citeMark = new CiteMark(this.viewer, this.eventBus, container);
     this.linkService.goToDestination = async (dest) => {
       await this.scrollToDestination(dest);
     };
@@ -127,6 +131,7 @@ export class PdfView {
 
     this.uiManager = null;
     this.document = document;
+    this.citeMark.clear(false);
 
     this.eventBus.on(
       'pagesinit',
@@ -145,7 +150,7 @@ export class PdfView {
     await previousTask?.destroy();
   }
 
-  /** Goes to a page, named destination and/or search phrase, now or as soon as it can. */
+  /** Goes to a citation's rectangles, a page, named destination and/or search phrase, now or as soon as it can. */
   navigate(target: NavTarget): void {
     this.pendingTarget = target;
     this.flushPendingTarget();
@@ -173,7 +178,13 @@ export class PdfView {
     void this.goTo(target);
   }
 
-  private async goTo({ page, dest, search }: NavTarget): Promise<void> {
+  private async goTo({ page, dest, search, rect }: NavTarget): Promise<void> {
+    // The rectangles of a citation are the most exact place there is; the rest is for links
+    // without them, or with none on the page.
+    if (rect && page && this.document && (await this.citeMark.show(this.document, page, rect))) {
+      return;
+    }
+    this.citeMark.clear(false);
     // Named destinations (hyperref's `section.4.3`, `table.2`, …) point at the exact spot; the
     // page number is the fallback for PDFs without them.
     const found = dest ? await this.scrollToDestination(dest) : false;

@@ -463,3 +463,92 @@ body[data-tool='eraser'] .highlightEditor .internal {
     rotate: 360deg;
   }
 }
+
+/*
+ * A citation's mark (citeMark.ts): an overlay on the page, never an annotation. One ink for both
+ * themes, since the page is white in both. It arrives with a ring that contracts onto it, then
+ * rests until dismissed. carrel draws the same mark (static/app.css); keep the two in step.
+ */
+.citeMark {
+  --cite-ink: 42 111 151;
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.citeMark.arriving {
+  opacity: 1;
+  animation: cite-arrive 160ms ease-out;
+}
+
+.citeMark.rested {
+  opacity: 1;
+}
+
+.citeMark.leaving {
+  opacity: 0;
+  transition: opacity 220ms ease-in;
+}
+
+.citeMark-line,
+.citeMark-block {
+  position: absolute;
+}
+
+/* A quote or a value: a soft wash with a hairline under it, as if underlined in ink. */
+.citeMark-line {
+  border-radius: 2px;
+  background: rgb(var(--cite-ink) / 0.14);
+  box-shadow: inset 0 -1.5px 0 rgb(var(--cite-ink) / 0.55);
+  mix-blend-mode: multiply;
+}
+
+/* A table, figure or equation: a thin outline and the faintest wash. */
+.citeMark-block {
+  border-radius: 5px;
+  background: rgb(var(--cite-ink) / 0.045);
+  box-shadow: inset 0 0 0 1.5px rgb(var(--cite-ink) / 0.7);
+}
+
+.citeMark-line::after,
+.citeMark-block::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+}
+
+.citeMark.arriving > ::after {
+  animation: cite-ring 760ms cubic-bezier(0.2, 0.7, 0.3, 1) 80ms backwards;
+}
+
+@keyframes cite-arrive {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cite-ring {
+  from {
+    opacity: 1;
+    box-shadow: 0 0 0 12px rgb(var(--cite-ink) / 0.2);
+  }
+  to {
+    opacity: 0;
+    box-shadow: 0 0 0 0 rgb(var(--cite-ink) / 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .citeMark.arriving,
+  .citeMark.arriving > ::after {
+    animation: none;
+  }
+
+  .citeMark.leaving {
+    transition: none;
+  }
+}

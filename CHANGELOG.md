@@ -4,6 +4,13 @@ All notable changes to PDF Viewer are listed here.
 
 ## [Unreleased]
 
+### Added
+
+- A link can mark the exact place it points to in the page: a phrase, a value in a table, a whole
+  table, a figure or an equation. The page scrolls it into the middle of the view, and a quiet mark
+  appears there and stays until you click the page, press Escape or follow another link. The mark
+  is never saved into the PDF.
+
 ### Changed
 
 - When the PDF changes on disk while you have unsaved highlights, a bar at the top of the viewer
