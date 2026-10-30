@@ -10,12 +10,14 @@ export type HostMessage =
   | { type: 'load'; data: Uint8Array; dirty: boolean; target?: NavTarget }
   | { type: 'navigate'; target: NavTarget }
   | { type: 'getBytes'; requestId: number }
-  | { type: 'saved' };
+  | { type: 'undo' }
+  | { type: 'redo' }
+  | { type: 'dirty'; dirty: boolean };
 
 /** Messages the webview sends to the extension host. */
 export type WebviewMessage =
   | { type: 'ready' }
-  | { type: 'edited' }
+  | { type: 'edit' }
   | { type: 'save' }
   | { type: 'bytes'; requestId: number; data: Uint8Array }
   | { type: 'bytesError'; requestId: number; message: string }

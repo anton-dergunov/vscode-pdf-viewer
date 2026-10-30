@@ -1,21 +1,33 @@
 import {
   AnnotationEditorType,
+  AnnotationEditorUIManager,
   getDocument,
   GlobalWorkerOptions,
   PasswordException,
-  type AnnotationEditorUIManager,
   type PDFDocumentLoadingTask,
   type PDFDocumentProxy,
 } from 'pdfjs-dist';
 import { EventBus, LinkTarget, PDFFindController, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import type { NavTarget } from '../shared/messages';
 import { HIGHLIGHT_COLORS } from './layout';
+import { lineBoxes, type Box } from './lineBoxes';
 
 /** Space kept above a destination (a section heading, a table caption) when jumping to it. */
 const DEST_CONTEXT_PX = 72;
 
 /** Zoom presets that depend on the viewer's size, so they are re-applied when it resizes. */
 const FIT_PRESETS = new Set(['page-width', 'page-fit', 'auto']);
+
+/**
+ * VS Code's Undo and Redo step through the highlight history: each change is an edit of the
+ * document (`onEdit`), which VS Code undoes and redoes through `PdfView.undo()` and `redo()`, and
+ * so knows when the PDF is back as it was saved. The webview passes Ctrl/Cmd+Z on to VS Code too,
+ * so pdf.js's own shortcuts, which call these prototype methods, must do nothing, or a key press
+ * would undo twice. Nothing else in pdf.js calls them.
+ */
+const { undo: undoCommand, redo: redoCommand } = AnnotationEditorUIManager.prototype;
+AnnotationEditorUIManager.prototype.undo = () => {};
+AnnotationEditorUIManager.prototype.redo = () => {};
 
 /** Owns the pdf.js viewer component and the currently loaded document. */
 export class PdfView {
@@ -30,9 +42,11 @@ export class PdfView {
   /** False while a document is loading; navigation requested meanwhile waits in `pendingTarget`. */
   private pagesReady = false;
   private pendingTarget: NavTarget | null = null;
+  /** Set while VS Code undoes or redoes a change, which is not a new one. */
+  private replaying = false;
 
-  /** Called when the document goes from unmodified to modified. */
-  onModified = () => {};
+  /** Called for each change to the highlights: one step of VS Code's Undo. */
+  onEdit = () => {};
   /** Called to search for a phrase as part of navigation. */
   onSearch = (_query: string) => {};
 
@@ -57,9 +71,13 @@ export class PdfView {
     };
     this.eventBus.on('annotationeditoruimanager', ({ uiManager }: { uiManager: AnnotationEditorUIManager }) => {
       this.uiManager = uiManager;
-      trackCommands(uiManager, () => this.onModified());
+      trackCommands(uiManager, () => {
+        if (!this.replaying) {
+          this.onEdit();
+        }
+      });
+      joinLines(uiManager);
     });
-    this.trackUndoShortcuts();
     new ResizeObserver(() => {
       this.refitToContainer();
       this.flushPendingTarget();
@@ -201,35 +219,26 @@ export class PdfView {
     return true;
   }
 
-  /**
-   * pdf.js binds its undo/redo shortcuts to the prototype methods, bypassing `trackCommands`, so
-   * those keystrokes are counted as edits here when there is something to undo or redo.
-   */
-  private trackUndoShortcuts(): void {
-    let canUndo = false;
-    let canRedo = false;
-    this.eventBus.on(
-      'editingstateschanged',
-      ({ details }: { details: { hasSomethingToUndo?: boolean; hasSomethingToRedo?: boolean } }) => {
-        canUndo = details.hasSomethingToUndo ?? canUndo;
-        canRedo = details.hasSomethingToRedo ?? canRedo;
-      },
-    );
-    document.addEventListener(
-      'keydown',
-      (event) => {
-        if (!(event.ctrlKey || event.metaKey) || event.altKey) {
-          return;
-        }
-        const key = event.key.toLowerCase();
-        const isRedo = key === 'y' || (key === 'z' && event.shiftKey);
-        const isUndo = key === 'z' && !event.shiftKey;
-        if ((isUndo && canUndo) || (isRedo && canRedo)) {
-          this.onModified();
-        }
-      },
-      { capture: true },
-    );
+  /** Undoes the last change to the highlights, for VS Code's Undo. */
+  undo(): void {
+    this.replay(undoCommand);
+  }
+
+  /** Redoes the last undone change to the highlights, for VS Code's Redo. */
+  redo(): void {
+    this.replay(redoCommand);
+  }
+
+  private replay(command: (this: AnnotationEditorUIManager) => void): void {
+    if (!this.uiManager) {
+      return; // The document was loaded again since: its history starts afresh.
+    }
+    this.replaying = true;
+    try {
+      command.call(this.uiManager);
+    } finally {
+      this.replaying = false;
+    }
   }
 
   /** Returns the PDF bytes with all highlight changes applied as an incremental update. */
@@ -243,20 +252,34 @@ export class PdfView {
 }
 
 /**
- * Every highlight edit (create, recolor, delete) and every undo/redo from code goes through these
- * methods. pdf.js's own storage-level "modified" flag is not usable for this: it is set merely by
- * entering highlight mode (existing highlights get added to storage), and it misses deleting a
- * highlight that was already in the file.
+ * Every highlight edit (create, recolor, delete) goes through `addCommands`, and each one is a step
+ * of pdf.js's history and an edit for VS Code. pdf.js would fold a recolor into the change before it
+ * when that was a recolor too, leaving one step where VS Code counts two, so it is asked not to.
+ * pdf.js's own storage-level "modified" flag is not usable for this: it is set merely by entering
+ * highlight mode (existing highlights get added to storage), and it misses deleting a highlight that
+ * was already in the file.
  */
-function trackCommands(uiManager: AnnotationEditorUIManager, onModified: () => void): void {
-  const manager = uiManager as unknown as Record<'addCommands' | 'undo' | 'redo', (...args: unknown[]) => void>;
-  for (const method of ['addCommands', 'undo', 'redo'] as const) {
-    const original = manager[method].bind(uiManager);
-    manager[method] = (...args) => {
-      original(...args);
-      onModified();
-    };
-  }
+function trackCommands(uiManager: AnnotationEditorUIManager, onEdit: () => void): void {
+  const addCommands = uiManager.addCommands.bind(uiManager);
+  uiManager.addCommands = (params: object) => {
+    addCommands({ ...params, overwriteIfSameType: false });
+    onEdit();
+  };
+}
+
+/** A highlight made from a selection is drawn line by line, without holes (`lineBoxes`). */
+function joinLines(uiManager: AnnotationEditorUIManager): void {
+  const getSelectionBoxes = uiManager.getSelectionBoxes.bind(uiManager);
+  uiManager.getSelectionBoxes = (textLayer: HTMLElement) => {
+    const boxes = getSelectionBoxes(textLayer) as Box[] | null;
+    if (!boxes) {
+      return boxes;
+    }
+    // The boxes are fractions of the page as it is unrotated.
+    const { width, height } = textLayer.getBoundingClientRect();
+    const turned = ['90', '270'].includes(textLayer.getAttribute('data-main-rotation') ?? '');
+    return lineBoxes(boxes, turned ? height / width : width / height);
+  };
 }
 
 let workerReady: Promise<void> | undefined;

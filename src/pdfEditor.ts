@@ -23,10 +23,17 @@ class PdfDocument implements vscode.CustomDocument {
     readonly realPath: string,
     /** The bytes the webview should show next time it (re)loads. */
     public data: Uint8Array,
-    /** Whether the viewer holds unsaved changes. */
-    public dirty: boolean,
     private readonly onDispose: () => void,
   ) {}
+
+  /**
+   * Whether the viewer holds unsaved changes, as VS Code's tab shows it: VS Code keeps the edits,
+   * so it knows when undoing has brought the PDF back to the file, and that a document restored
+   * from a backup is not the file.
+   */
+  get dirty(): boolean {
+    return vscode.window.tabGroups.all.some((group) => group.tabs.some((tab) => tab.isDirty && isTabOf(tab, this.uri)));
+  }
 
   attach(panel: vscode.WebviewPanel): void {
     this.panel = panel;
@@ -93,6 +100,14 @@ class PdfDocument implements vscode.CustomDocument {
   }
 }
 
+function isTabOf(tab: vscode.Tab, uri: vscode.Uri): boolean {
+  return (
+    tab.input instanceof vscode.TabInputCustom &&
+    tab.input.viewType === PdfEditorProvider.viewType &&
+    tab.input.uri.toString() === uri.toString()
+  );
+}
+
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return Buffer.from(a.buffer, a.byteOffset, a.byteLength).equals(Buffer.from(b.buffer, b.byteOffset, b.byteLength));
 }
@@ -114,7 +129,7 @@ function documentPath(uri: vscode.Uri): Promise<string> {
 export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocument> {
   static readonly viewType = 'vscode-pdf-viewer.pdfEditor';
 
-  private readonly changeEmitter = new vscode.EventEmitter<vscode.CustomDocumentContentChangeEvent<PdfDocument>>();
+  private readonly changeEmitter = new vscode.EventEmitter<vscode.CustomDocumentEditEvent<PdfDocument>>();
   readonly onDidChangeCustomDocument = this.changeEmitter.event;
 
   /** Open documents by URI. A link to an open file navigates its tab instead of opening another. */
@@ -122,7 +137,17 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
   /** Navigation for a document that `open()` is about to create. */
   private readonly pendingTargets = new Map<string, NavTarget>();
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(private readonly context: vscode.ExtensionContext) {
+    // The toolbar's Save button follows the tab's unsaved-changes dot.
+    context.subscriptions.push(
+      vscode.window.tabGroups.onDidChangeTabs(({ changed }) => {
+        for (const tab of changed) {
+          const document = [...this.documents.values()].find((open) => isTabOf(tab, open.uri));
+          document?.post({ type: 'dirty', dirty: tab.isDirty });
+        }
+      }),
+    );
+  }
 
   /** Opens a PDF in the viewer (or reveals its tab) and goes to the requested place. */
   async open({ file, ...target }: PdfTarget): Promise<void> {
@@ -170,7 +195,6 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
       uri,
       await documentPath(uri),
       await readFile(source),
-      !!openContext.backupId,
       () => this.documents.delete(key),
     );
     this.documents.set(key, document);
@@ -194,9 +218,14 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
         case 'ready':
           document.load();
           break;
-        case 'edited':
-          document.dirty = true;
-          this.changeEmitter.fire({ document });
+        case 'edit':
+          // VS Code's Undo and Redo hand the step back to the webview, whose history it is.
+          this.changeEmitter.fire({
+            document,
+            label: 'Highlight',
+            undo: () => document.post({ type: 'undo' }),
+            redo: () => document.post({ type: 'redo' }),
+          });
           break;
         case 'save':
           void vscode.commands.executeCommand('workbench.action.files.save');
@@ -223,15 +252,12 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
     if (destination.toString() === document.uri.toString()) {
       // Set before writing, so the file watcher recognizes the change as our own.
       document.data = data;
-      document.dirty = false;
     }
     await vscode.workspace.fs.writeFile(destination, data);
-    document.post({ type: 'saved' });
   }
 
   async revertCustomDocument(document: PdfDocument): Promise<void> {
     document.data = await readFile(document.uri);
-    document.dirty = false;
     document.load();
   }
 

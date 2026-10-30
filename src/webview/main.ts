@@ -23,10 +23,8 @@ const setDirty = (dirty: boolean) => {
   ui.save.disabled = !dirty;
 };
 
-view.onModified = () => {
-  setDirty(true);
-  postToHost({ type: 'edited' });
-};
+// VS Code keeps the edits, and says when the PDF differs from the file (`dirty`).
+view.onEdit = () => postToHost({ type: 'edit' });
 view.eventBus.on('pagesinit', () => {
   ui.loading.hidden = true;
 });
@@ -79,8 +77,14 @@ onHostMessage(async (message) => {
         postToHost({ type: 'bytesError', requestId: message.requestId, message: (error as Error).message });
       }
       break;
-    case 'saved':
-      setDirty(false);
+    case 'undo':
+      view.undo();
+      break;
+    case 'redo':
+      view.redo();
+      break;
+    case 'dirty':
+      setDirty(message.dirty);
       break;
   }
 });

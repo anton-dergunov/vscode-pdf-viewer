@@ -6,6 +6,11 @@ All notable changes to PDF Viewer are listed here.
 
 ### Fixed
 
+- Undo and Redo in the Edit menu now work for highlights, and each undoes or redoes one change.
+  Undoing every change since the last save leaves the PDF unchanged and no longer marked as unsaved.
+- Each recolor of a highlight can be undone on its own.
+- A highlight across several words no longer has gaps between some of them, and each of its lines
+  is one even band.
 - A link to a PDF that is already open now goes to its tab also when the PDF was opened through
   a symlinked folder, instead of opening the same PDF a second time.
 

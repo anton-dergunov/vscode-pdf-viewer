@@ -28,7 +28,9 @@ page view, a toolbar that hides while you read, highlighting, search, and nothin
 - **Highlighting** in six colors. Highlights follow the selected text exactly and are saved into
   the PDF as standard annotations, so other PDF readers and tablets show them too.
 - **Eraser.** Click any highlight to remove it, including highlights made in other apps.
-  In highlight mode, click a highlight to recolor or delete it. Ctrl/Cmd+Z undoes.
+  In highlight mode, click a highlight to recolor or delete it.
+- **Undo and Redo** (the Edit menu, Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z) step through your highlight
+  changes one at a time; undo them all and the PDF is unchanged again.
 - **Saving like any other file.** The tab shows unsaved changes, Ctrl/Cmd+S saves, closing asks
   first, and unsaved highlights survive a restart.
 - **Search** with Ctrl/Cmd+F. All matches are marked and the current one stands out.
