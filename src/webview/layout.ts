@@ -69,6 +69,7 @@ const markup = /* html */ `
   <div id="notice" class="notice" role="status" aria-live="polite" hidden>
     <span id="notice-text" class="notice-text"></span>
     <button id="notice-reload" class="btn notice-action" title="Discard your unsaved highlights and show the file from disk">Reload</button>
+    <button id="notice-overwrite" class="btn notice-action" title="Save your version over the file, dropping the change made elsewhere">Overwrite</button>
     <button id="notice-close" class="btn small" title="Dismiss">${icon('close')}</button>
   </div>
 
@@ -122,6 +123,7 @@ export function createLayout() {
     notice: byId<HTMLDivElement>('notice'),
     noticeText: byId<HTMLSpanElement>('notice-text'),
     noticeReload: byId<HTMLButtonElement>('notice-reload'),
+    noticeOverwrite: byId<HTMLButtonElement>('notice-overwrite'),
     noticeClose: byId<HTMLButtonElement>('notice-close'),
     findbar: byId<HTMLDivElement>('findbar'),
     findInput: byId<HTMLInputElement>('find-input'),

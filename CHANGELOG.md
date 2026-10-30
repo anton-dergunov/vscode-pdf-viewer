@@ -10,8 +10,8 @@ All notable changes to PDF Viewer are listed here.
   says so and stays until you save, reload or close it, instead of a warning that fades. Its
   Reload button discards your unsaved highlights and shows the file from disk.
 - Saving then adds your highlights to the newer file, so highlights made elsewhere, for example on
-  another device, are kept. When that isn't possible, Save asks whether to overwrite the file or
-  reload it, and cancelling leaves your highlights unsaved.
+  another device, are kept. When that isn't possible, nothing is saved and the bar says why, with
+  buttons to overwrite the file with your version or reload it from disk.
 - When the PDF reloads because it changed on disk, a short note says so.
 
 ### Fixed

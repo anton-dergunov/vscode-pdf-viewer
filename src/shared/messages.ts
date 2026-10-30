@@ -6,10 +6,11 @@ export interface NavTarget {
 }
 
 /**
- * What the viewer's bar says: the file changed on disk while there are unsaved highlights (stays
- * until dealt with), or a brief note that it was reloaded or saved together with that change.
+ * What the viewer's bar says: the file changed on disk while there are unsaved highlights, or Save
+ * couldn't add them to it (both stay until dealt with); or a brief note that the file was reloaded
+ * or saved together with that change.
  */
-export type NoticeKind = 'changed' | 'reloaded' | 'merged' | 'clear';
+export type NoticeKind = 'changed' | 'conflict' | 'reloaded' | 'merged' | 'clear';
 
 /** Messages the extension host sends to the webview. */
 export type HostMessage =
@@ -20,7 +21,8 @@ export type HostMessage =
   | { type: 'saved' }
   /** Adds the unsaved highlight changes to `data`, the newer file on disk. */
   | { type: 'merge'; requestId: number; data: Uint8Array; appended: boolean }
-  | { type: 'notice'; kind: NoticeKind; name: string; undoLost?: boolean }
+  /** `reason`: for `conflict`, why the highlights can't be added to the file on disk. */
+  | { type: 'notice'; kind: NoticeKind; name: string; undoLost?: boolean; reason?: string }
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'dirty'; dirty: boolean };
@@ -31,6 +33,8 @@ export type WebviewMessage =
   | { type: 'edit' }
   | { type: 'save' }
   | { type: 'revert' }
+  /** Save, replacing the newer file on disk with this version. */
+  | { type: 'overwrite' }
   | { type: 'bytes'; requestId: number; data: Uint8Array }
   | { type: 'bytesError'; requestId: number; message: string }
   | { type: 'mergeConflict'; requestId: number; reason: string }

@@ -13,6 +13,8 @@ class PdfDocument implements vscode.CustomDocument {
   panel: vscode.WebviewPanel | undefined;
   /** The file on disk differs from `data` while the viewer holds unsaved highlights. */
   changedOnDisk = false;
+  /** The reader chose Overwrite: the next save replaces the file on disk without merging. */
+  overwriteNext = false;
   /**
    * Highlights were changed in this tab. VS Code keeps those edit steps across a reload, but the
    * reloaded viewer can't undo them any more.
@@ -76,8 +78,8 @@ class PdfDocument implements vscode.CustomDocument {
     return path.basename(this.uri.fsPath);
   }
 
-  notice(kind: NoticeKind): void {
-    this.post({ type: 'notice', kind, name: this.name, undoLost: this.hadEdits });
+  notice(kind: NoticeKind, reason?: string): void {
+    this.post({ type: 'notice', kind, name: this.name, undoLost: this.hadEdits, reason });
   }
 
   /**
@@ -287,6 +289,10 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
         case 'revert':
           void vscode.commands.executeCommand('workbench.action.files.revert');
           break;
+        case 'overwrite':
+          document.overwriteNext = true;
+          void vscode.commands.executeCommand('workbench.action.files.save');
+          break;
         case 'bytes':
           document.settleRequest(message.requestId, { data: message.data });
           break;
@@ -312,8 +318,10 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
       await vscode.workspace.fs.writeFile(destination, await document.requestBytes());
       return;
     }
+    const overwrite = document.overwriteNext;
+    document.overwriteNext = false;
     const disk = await readFile(document.uri).catch(() => undefined);
-    if (!disk || sameBytes(disk, document.data)) {
+    if (overwrite || !disk || sameBytes(disk, document.data)) {
       return this.writeOwnFile(document);
     }
 
@@ -332,29 +340,8 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
       return;
     }
 
-    const overwrite = 'Overwrite';
-    const reload = 'Reload';
-    const choice = await vscode.window.showWarningMessage(
-      `${document.name} was changed on disk, and your highlights can't be added to it: ${merged.conflict}.`,
-      {
-        modal: true,
-        detail:
-          'Overwrite replaces the file with your version and drops the change made elsewhere. ' +
-          'Reload discards your unsaved highlights and shows the file from disk.',
-      },
-      overwrite,
-      reload,
-    );
-    if (choice === overwrite) {
-      return this.writeOwnFile(document);
-    }
-    if (choice === reload) {
-      // Nothing is written; VS Code marks the tab saved, and the viewer shows the file.
-      document.data = disk;
-      document.changedOnDisk = false;
-      document.load();
-      return;
-    }
+    // The bar offers Overwrite and Reload. There is no modal, so no key picks one by accident.
+    document.notice('conflict', merged.conflict);
     throw new vscode.CancellationError();
   }
 
@@ -371,8 +358,10 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
   }
 
   async revertCustomDocument(document: PdfDocument): Promise<void> {
-    document.data = await readFile(document.uri);
+    // Cleared first: VS Code marks the tab clean before this finishes, and a clean tab with the
+    // file changed on disk would reload it a second time.
     document.changedOnDisk = false;
+    document.data = await readFile(document.uri);
     document.load();
   }
 
@@ -418,6 +407,7 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
     } catch {
       return; // Deleted or mid-replace; a following create event retries.
     }
+    document.overwriteNext = false;
     if (sameBytes(data, document.data)) {
       // Our own save, or the file is back as the viewer has it.
       if (document.changedOnDisk) {

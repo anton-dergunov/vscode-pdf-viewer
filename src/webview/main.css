@@ -18,6 +18,9 @@
   --button-hover-bg: var(--vscode-button-hoverBackground, #1177bb);
   --error-fg: var(--vscode-errorForeground, #f48771);
   --info-fg: var(--vscode-editorInfo-foreground, #3794ff);
+  --secondary-bg: var(--vscode-button-secondaryBackground, #3a3d41);
+  --secondary-fg: var(--vscode-button-secondaryForeground, #cccccc);
+  --secondary-hover-bg: var(--vscode-button-secondaryHoverBackground, #45494e);
 }
 
 /* pdf.js styles its own widgets (e.g. the selected-highlight toolbar) with light-dark(). */
@@ -348,8 +351,16 @@ body {
 }
 
 .btn.notice-action {
-  padding: 0 8px;
-  border-color: var(--widget-border);
+  flex: none;
+  padding: 0 10px;
+  background: var(--secondary-bg);
+  color: var(--secondary-fg);
+  /* Some themes give secondary buttons the same color as the bar. */
+  border-color: color-mix(in srgb, var(--secondary-fg) 35%, transparent);
+}
+
+.btn.notice-action:hover {
+  background: var(--secondary-hover-bg);
 }
 
 /* ─── Find bar ────────────────────────────────────────────────────────────── */

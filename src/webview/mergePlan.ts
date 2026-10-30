@@ -42,7 +42,7 @@ export function planMerge<T extends Change>(
 ): MergePlan<T> {
   for (const key of saved.keys()) {
     if (!changes.has(key)) {
-      return { conflict: 'a highlight saved earlier was changed back since' };
+      return { conflict: 'a highlight saved earlier has changed since' };
     }
   }
   const apply: [string, T][] = [];
@@ -57,7 +57,7 @@ export function planMerge<T extends Change>(
       }
     } else if (before !== undefined) {
       // Its place in the saved file isn't known, so the newer file can't be updated to match.
-      return { conflict: 'a highlight saved earlier was changed again since' };
+      return { conflict: 'a highlight saved earlier has changed since' };
     }
     if (!(change.pageIndex >= 0 && change.pageIndex < pageCount)) {
       return { conflict: 'the file now has fewer pages' };

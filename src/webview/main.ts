@@ -96,7 +96,7 @@ onHostMessage(async (message) => {
       }
       break;
     case 'notice':
-      notice.show(message.kind, message.name, message.undoLost);
+      notice.show(message.kind, message.name, message.undoLost, message.reason);
       break;
     case 'undo':
       view.undo();
