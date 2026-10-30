@@ -3,18 +3,28 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { resolvePdfFile, type PdfTarget } from './links';
 import { canonicalPath } from './realPath';
-import type { HostMessage, NavTarget, WebviewMessage } from './shared/messages';
+import type { HostMessage, NavTarget, NoticeKind, WebviewMessage } from './shared/messages';
+
+/** What the webview answers a request with: PDF bytes, or why highlights couldn't be merged. */
+type RequestResult = { data: Uint8Array } | { conflict: string };
 
 /** A PDF file opened in the viewer. The webview owns the live state; this side owns file I/O. */
 class PdfDocument implements vscode.CustomDocument {
   panel: vscode.WebviewPanel | undefined;
+  /** The file on disk differs from `data` while the viewer holds unsaved highlights. */
+  changedOnDisk = false;
+  /**
+   * Highlights were changed in this tab. VS Code keeps those edit steps across a reload, but the
+   * reloaded viewer can't undo them any more.
+   */
+  hadEdits = false;
   /** Set once the webview has asked for the document; until then navigation waits for `load`. */
   private loaded = false;
   private pendingTarget: NavTarget | undefined;
   private nextRequestId = 1;
   private readonly pendingRequests = new Map<
     number,
-    { resolve: (data: Uint8Array) => void; reject: (error: Error) => void }
+    { resolve: (result: RequestResult) => void; reject: (error: Error) => void }
   >();
 
   constructor(
@@ -62,29 +72,59 @@ class PdfDocument implements vscode.CustomDocument {
     }
   }
 
-  /** Asks the webview for the current PDF bytes, including unsaved highlight changes. */
-  requestBytes(): Promise<Uint8Array> {
-    if (!this.panel) {
-      return Promise.resolve(this.data);
-    }
-    const requestId = this.nextRequestId++;
-    return new Promise((resolve, reject) => {
-      this.pendingRequests.set(requestId, { resolve, reject });
-      this.post({ type: 'getBytes', requestId });
-    });
+  get name(): string {
+    return path.basename(this.uri.fsPath);
   }
 
-  settleRequest(requestId: number, result: { data: Uint8Array } | { error: string }): void {
+  notice(kind: NoticeKind): void {
+    this.post({ type: 'notice', kind, name: this.name, undoLost: this.hadEdits });
+  }
+
+  /**
+   * Asks the webview for the current PDF bytes, including unsaved highlight changes. `forSave`:
+   * they are about to be written to this PDF's own file.
+   */
+  async requestBytes(forSave = false): Promise<Uint8Array> {
+    if (!this.panel) {
+      return this.data;
+    }
+    const result = await this.request((requestId) => ({ type: 'getBytes', requestId, forSave }));
+    if (!('data' in result)) {
+      throw new Error(result.conflict);
+    }
+    return result.data;
+  }
+
+  /**
+   * Asks the webview to add its unsaved highlight changes to `disk`, the newer file. `appended`:
+   * `disk` is the bytes last loaded or saved with more added at the end, so it keeps their objects.
+   */
+  requestMerge(disk: Uint8Array, appended: boolean): Promise<RequestResult> {
+    if (!this.panel) {
+      return Promise.resolve({ conflict: 'the viewer is closed' });
+    }
+    return this.request((requestId) => ({ type: 'merge', requestId, data: disk, appended }));
+  }
+
+  settleRequest(requestId: number, result: RequestResult | { error: string }): void {
     const pending = this.pendingRequests.get(requestId);
     if (!pending) {
       return;
     }
     this.pendingRequests.delete(requestId);
-    if ('data' in result) {
-      pending.resolve(result.data);
-    } else {
+    if ('error' in result) {
       pending.reject(new Error(result.error));
+    } else {
+      pending.resolve(result);
     }
+  }
+
+  private request(message: (requestId: number) => HostMessage): Promise<RequestResult> {
+    const requestId = this.nextRequestId++;
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.set(requestId, { resolve, reject });
+      this.post(message(requestId));
+    });
   }
 
   dispose(): void {
@@ -108,8 +148,17 @@ function isTabOf(tab: vscode.Tab, uri: vscode.Uri): boolean {
   );
 }
 
+function buffer(a: Uint8Array): Buffer {
+  return Buffer.from(a.buffer, a.byteOffset, a.byteLength);
+}
+
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
-  return Buffer.from(a.buffer, a.byteOffset, a.byteLength).equals(Buffer.from(b.buffer, b.byteOffset, b.byteLength));
+  return buffer(a).equals(buffer(b));
+}
+
+/** Whether `a` is `prefix` with more bytes after it, as when another app appends an update to a PDF. */
+function startsWith(a: Uint8Array, prefix: Uint8Array): boolean {
+  return a.byteLength > prefix.byteLength && buffer(a).subarray(0, prefix.byteLength).equals(buffer(prefix));
 }
 
 /**
@@ -144,6 +193,10 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
         for (const tab of changed) {
           const document = [...this.documents.values()].find((open) => isTabOf(tab, open.uri));
           document?.post({ type: 'dirty', dirty: tab.isDirty });
+          // Undoing every unsaved change leaves a clean viewer, which shows the file as it is now.
+          if (document?.changedOnDisk && !tab.isDirty) {
+            void this.reloadFromDisk(document);
+          }
         }
       }),
     );
@@ -219,6 +272,7 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
           document.load();
           break;
         case 'edit':
+          document.hadEdits = true;
           // VS Code's Undo and Redo hand the step back to the webview, whose history it is.
           this.changeEmitter.fire({
             document,
@@ -230,11 +284,17 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
         case 'save':
           void vscode.commands.executeCommand('workbench.action.files.save');
           break;
+        case 'revert':
+          void vscode.commands.executeCommand('workbench.action.files.revert');
+          break;
         case 'bytes':
           document.settleRequest(message.requestId, { data: message.data });
           break;
         case 'bytesError':
           document.settleRequest(message.requestId, { error: message.message });
+          break;
+        case 'mergeConflict':
+          document.settleRequest(message.requestId, { conflict: message.reason });
           break;
         case 'error':
           void vscode.window.showErrorMessage(`PDF Viewer: ${message.message}`);
@@ -248,16 +308,71 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
   }
 
   async saveCustomDocumentAs(document: PdfDocument, destination: vscode.Uri): Promise<void> {
-    const data = await document.requestBytes();
-    if (destination.toString() === document.uri.toString()) {
-      // Set before writing, so the file watcher recognizes the change as our own.
-      document.data = data;
+    if (destination.toString() !== document.uri.toString()) {
+      await vscode.workspace.fs.writeFile(destination, await document.requestBytes());
+      return;
     }
-    await vscode.workspace.fs.writeFile(destination, data);
+    const disk = await readFile(document.uri).catch(() => undefined);
+    if (!disk || sameBytes(disk, document.data)) {
+      return this.writeOwnFile(document);
+    }
+
+    // The file changed on disk since it was loaded or saved: add the highlights to it.
+    const merged = await document
+      .requestMerge(disk, startsWith(disk, document.data))
+      .catch((error: Error): RequestResult => ({ conflict: `merging failed (${error.message})` }));
+    if ('data' in merged) {
+      // Set before writing, so the file watcher recognizes the change as our own.
+      document.data = merged.data;
+      await vscode.workspace.fs.writeFile(document.uri, merged.data);
+      document.changedOnDisk = false;
+      // The viewer takes the merged file as what its next changes are added to.
+      document.load();
+      document.notice('merged');
+      return;
+    }
+
+    const overwrite = 'Overwrite';
+    const reload = 'Reload';
+    const choice = await vscode.window.showWarningMessage(
+      `${document.name} was changed on disk, and your highlights can't be added to it: ${merged.conflict}.`,
+      {
+        modal: true,
+        detail:
+          'Overwrite replaces the file with your version and drops the change made elsewhere. ' +
+          'Reload discards your unsaved highlights and shows the file from disk.',
+      },
+      overwrite,
+      reload,
+    );
+    if (choice === overwrite) {
+      return this.writeOwnFile(document);
+    }
+    if (choice === reload) {
+      // Nothing is written; VS Code marks the tab saved, and the viewer shows the file.
+      document.data = disk;
+      document.changedOnDisk = false;
+      document.load();
+      return;
+    }
+    throw new vscode.CancellationError();
+  }
+
+  private async writeOwnFile(document: PdfDocument): Promise<void> {
+    const data = await document.requestBytes(true);
+    // Set before writing, so the file watcher recognizes the change as our own.
+    document.data = data;
+    await vscode.workspace.fs.writeFile(document.uri, data);
+    document.post({ type: 'saved' });
+    if (document.changedOnDisk) {
+      document.changedOnDisk = false;
+      document.notice('clear');
+    }
   }
 
   async revertCustomDocument(document: PdfDocument): Promise<void> {
     document.data = await readFile(document.uri);
+    document.changedOnDisk = false;
     document.load();
   }
 
@@ -274,7 +389,8 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
 
   /**
    * Reloads the viewer when the file changes on disk, e.g. when highlights made on another device
-   * sync back. Unsaved highlights are never discarded: a dirty viewer is left as it is.
+   * sync back. Unsaved highlights are never discarded: a dirty viewer is left as it is, with a
+   * notice, and Save adds them to the newer file.
    */
   private watchFile(document: PdfDocument, panel: vscode.WebviewPanel): void {
     const folder = vscode.Uri.file(path.dirname(document.uri.fsPath));
@@ -303,16 +419,22 @@ export class PdfEditorProvider implements vscode.CustomEditorProvider<PdfDocumen
       return; // Deleted or mid-replace; a following create event retries.
     }
     if (sameBytes(data, document.data)) {
+      // Our own save, or the file is back as the viewer has it.
+      if (document.changedOnDisk) {
+        document.changedOnDisk = false;
+        document.notice('clear');
+      }
       return;
     }
     if (document.dirty) {
-      void vscode.window.showWarningMessage(
-        `${path.basename(document.uri.fsPath)} changed on disk. Your unsaved highlights are kept; saving will overwrite the file.`,
-      );
+      document.changedOnDisk = true;
+      document.notice('changed');
       return;
     }
     document.data = data;
+    document.changedOnDisk = false;
     document.load();
+    document.notice('reloaded');
   }
 
   private getHtml(webview: vscode.Webview, distUri: vscode.Uri): string {

@@ -4,6 +4,16 @@ All notable changes to PDF Viewer are listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- When the PDF changes on disk while you have unsaved highlights, a bar at the top of the viewer
+  says so and stays until you save, reload or close it, instead of a warning that fades. Its
+  Reload button discards your unsaved highlights and shows the file from disk.
+- Saving then adds your highlights to the newer file, so highlights made elsewhere, for example on
+  another device, are kept. When that isn't possible, Save asks whether to overwrite the file or
+  reload it, and cancelling leaves your highlights unsaved.
+- When the PDF reloads because it changed on disk, a short note says so.
+
 ### Fixed
 
 - Undo and Redo in the Edit menu now work for highlights, and each undoes or redoes one change.

@@ -11,6 +11,7 @@ import { EventBus, LinkTarget, PDFFindController, PDFLinkService, PDFViewer } fr
 import type { NavTarget } from '../shared/messages';
 import { HIGHLIGHT_COLORS } from './layout';
 import { lineBoxes, type Box } from './lineBoxes';
+import { mergeChanges, snapshotOf, type Change, type Snapshot } from './mergePlan';
 
 /** Space kept above a destination (a section heading, a table caption) when jumping to it. */
 const DEST_CONTEXT_PX = 72;
@@ -44,6 +45,9 @@ export class PdfView {
   private pendingTarget: NavTarget | null = null;
   /** Set while VS Code undoes or redoes a change, which is not a new one. */
   private replaying = false;
+  /** The highlight changes as of the last save, and as of a save still being written. */
+  private savedChanges: Snapshot = new Map();
+  private savingChanges: Snapshot | null = null;
 
   /** Called for each change to the highlights: one step of VS Code's Undo. */
   onEdit = () => {};
@@ -91,6 +95,9 @@ export class PdfView {
   async load(data: Uint8Array, target?: NavTarget): Promise<void> {
     this.pagesReady = false;
     this.pendingTarget = target ?? null;
+    // Changes from here on are relative to these bytes.
+    this.savedChanges = new Map();
+    this.savingChanges = null;
     await ensureWorker(this.assetsRoot);
 
     const previous = this.document
@@ -101,17 +108,7 @@ export class PdfView {
         }
       : null;
 
-    const task = getDocument({
-      data,
-      cMapUrl: `${this.assetsRoot}cmaps/`,
-      cMapPacked: true,
-      standardFontDataUrl: `${this.assetsRoot}standard_fonts/`,
-      wasmUrl: `${this.assetsRoot}wasm/`,
-      iccUrl: `${this.assetsRoot}iccs/`,
-      // Fetch these on the main thread: webview resources are served through the document's
-      // resource loader, which a blob worker does not reliably share.
-      useWorkerFetch: false,
-    });
+    const task = this.open(data);
     const previousTask = this.loadingTask;
     this.loadingTask = task;
 
@@ -241,13 +238,58 @@ export class PdfView {
     }
   }
 
-  /** Returns the PDF bytes with all highlight changes applied as an incremental update. */
-  async getBytes(): Promise<Uint8Array> {
+  /**
+   * Returns the PDF bytes with all highlight changes applied as an incremental update. `forSave`:
+   * they are being saved to the file, and `markSaved()` follows once they are written.
+   */
+  async getBytes(forSave = false): Promise<Uint8Array> {
     if (!this.document) {
       throw new Error('No document is loaded.');
     }
+    if (forSave) {
+      this.savingChanges = snapshotOf(this.changes());
+    }
     // saveDocument() warns when there is nothing to save; getData() returns the original bytes.
     return this.document.annotationStorage.size > 0 ? this.document.saveDocument() : this.document.getData();
+  }
+
+  markSaved(): void {
+    if (this.savingChanges) {
+      this.savedChanges = this.savingChanges;
+      this.savingChanges = null;
+    }
+  }
+
+  /**
+   * Adds the highlight changes made since the last save to `disk`, a newer copy of the file, as an
+   * incremental update. Returns why it can't be done when some change can't be placed safely
+   * (`planMerge`). `appended`: `disk` is the last loaded or saved bytes with more added at the end.
+   */
+  async mergeOnto(disk: Uint8Array, appended: boolean): Promise<{ data: Uint8Array } | { conflict: string }> {
+    if (!this.document) {
+      throw new Error('No document is loaded.');
+    }
+    // pdf.js takes ownership of the bytes it opens.
+    return mergeChanges(this.open(disk.slice()), disk, this.changes(), this.savedChanges, appended);
+  }
+
+  /** The highlight changes in the loaded document, serialized by pdf.js. */
+  private changes(): Map<string, Change> {
+    return new Map<string, Change>(this.document?.annotationStorage.serializable.map ?? []);
+  }
+
+  private open(data: Uint8Array): PDFDocumentLoadingTask {
+    return getDocument({
+      data,
+      cMapUrl: `${this.assetsRoot}cmaps/`,
+      cMapPacked: true,
+      standardFontDataUrl: `${this.assetsRoot}standard_fonts/`,
+      wasmUrl: `${this.assetsRoot}wasm/`,
+      iccUrl: `${this.assetsRoot}iccs/`,
+      // Fetch these on the main thread: webview resources are served through the document's
+      // resource loader, which a blob worker does not reliably share.
+      useWorkerFetch: false,
+    });
   }
 }
 

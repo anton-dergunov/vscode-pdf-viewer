@@ -1,6 +1,7 @@
 import './pdfjs';
 import { onHostMessage, postToHost, reportError } from './host';
 import { createLayout } from './layout';
+import { setupNotice } from './notice';
 import { setupSearch } from './search';
 import { setupAutoHide, setupNavigation, setupOverflow, setupZoom } from './toolbar';
 import { setupTools } from './tools';
@@ -17,6 +18,7 @@ setupOverflow(ui, view);
 setupTools(ui, view);
 setupWheel(view);
 const search = setupSearch(ui, view);
+const notice = setupNotice(ui);
 view.onSearch = (query) => search.openWith(query);
 
 const setDirty = (dirty: boolean) => {
@@ -59,6 +61,7 @@ onHostMessage(async (message) => {
     case 'load':
       ui.loading.hidden = false;
       setDirty(message.dirty);
+      notice.onLoad();
       try {
         await view.load(message.data, message.target);
       } catch (error) {
@@ -71,11 +74,29 @@ onHostMessage(async (message) => {
       break;
     case 'getBytes':
       try {
-        const data = await view.getBytes();
+        const data = await view.getBytes(message.forSave);
         postToHost({ type: 'bytes', requestId: message.requestId, data });
       } catch (error) {
         postToHost({ type: 'bytesError', requestId: message.requestId, message: (error as Error).message });
       }
+      break;
+    case 'saved':
+      view.markSaved();
+      break;
+    case 'merge':
+      try {
+        const result = await view.mergeOnto(message.data, message.appended);
+        postToHost(
+          'data' in result
+            ? { type: 'bytes', requestId: message.requestId, data: result.data }
+            : { type: 'mergeConflict', requestId: message.requestId, reason: result.conflict },
+        );
+      } catch (error) {
+        postToHost({ type: 'bytesError', requestId: message.requestId, message: (error as Error).message });
+      }
+      break;
+    case 'notice':
+      notice.show(message.kind, message.name, message.undoLost);
       break;
     case 'undo':
       view.undo();

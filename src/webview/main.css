@@ -17,6 +17,7 @@
   --button-fg: var(--vscode-button-foreground, #ffffff);
   --button-hover-bg: var(--vscode-button-hoverBackground, #1177bb);
   --error-fg: var(--vscode-errorForeground, #f48771);
+  --info-fg: var(--vscode-editorInfo-foreground, #3794ff);
 }
 
 /* pdf.js styles its own widgets (e.g. the selected-highlight toolbar) with light-dark(). */
@@ -306,11 +307,57 @@ body {
   gap: 2px;
 }
 
+/* ─── Notice ──────────────────────────────────────────────────────────────── */
+
+/* A quiet strip along the top: the file changed on disk, or a brief note. It moves down below the
+   toolbar while the toolbar is shown. */
+.notice {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 3px 8px 3px 12px;
+  background: var(--widget-bg);
+  border-bottom: 1px solid var(--widget-border);
+  border-left: 3px solid var(--info-fg);
+  box-shadow: 0 2px 8px var(--widget-shadow);
+  transition:
+    transform 0.2s ease,
+    opacity 0.3s ease;
+}
+
+.toolbar.visible ~ .notice {
+  transform: translateY(36px);
+}
+
+.notice.fading {
+  opacity: 0;
+}
+
+.notice-text {
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.notice-text strong {
+  font-weight: 600;
+}
+
+.btn.notice-action {
+  padding: 0 8px;
+  border-color: var(--widget-border);
+}
+
 /* ─── Find bar ────────────────────────────────────────────────────────────── */
 
 .findbar {
   position: fixed;
-  top: 44px;
+  /* Below the toolbar, and below the notice while it is shown. */
+  top: calc(44px + var(--notice-height, 0px));
   right: 16px;
   z-index: 100;
   display: flex;

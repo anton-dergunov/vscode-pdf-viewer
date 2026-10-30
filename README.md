@@ -38,8 +38,9 @@ page view, a toolbar that hides while you read, highlighting, search, and nothin
   Zooming keeps your place.
 - **Page navigation** with the buttons, the page field, the ←/→ keys, or a horizontal swipe that
   turns one page at a time.
-- **Reloads when the file changes on disk**, keeping your place. If you have unsaved highlights,
-  the tab is left alone and you get a warning.
+- **Reloads when the file changes on disk**, keeping your place, with a short note. If you have
+  unsaved highlights, they are kept and a bar at the top says the file changed; saving then adds
+  them to the newer file, so highlights made elsewhere are kept too.
 - **Links to a place in a PDF**, from the Claude Code chat or anywhere else. See below.
 
 ## Install

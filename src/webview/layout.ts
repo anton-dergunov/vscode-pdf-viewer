@@ -66,6 +66,12 @@ const markup = /* html */ `
     </div>
   </div>
 
+  <div id="notice" class="notice" role="status" aria-live="polite" hidden>
+    <span id="notice-text" class="notice-text"></span>
+    <button id="notice-reload" class="btn notice-action" title="Discard your unsaved highlights and show the file from disk">Reload</button>
+    <button id="notice-close" class="btn small" title="Dismiss">${icon('close')}</button>
+  </div>
+
   <div id="findbar" class="findbar" hidden>
     <input id="find-input" type="text" placeholder="Find in document…" autocomplete="off" spellcheck="false">
     <span id="find-count" class="find-count"></span>
@@ -113,6 +119,10 @@ export function createLayout() {
     swatches: [...document.querySelectorAll<HTMLButtonElement>('.swatch')],
     findToggle: byId<HTMLButtonElement>('find-toggle'),
     save: byId<HTMLButtonElement>('save'),
+    notice: byId<HTMLDivElement>('notice'),
+    noticeText: byId<HTMLSpanElement>('notice-text'),
+    noticeReload: byId<HTMLButtonElement>('notice-reload'),
+    noticeClose: byId<HTMLButtonElement>('notice-close'),
     findbar: byId<HTMLDivElement>('findbar'),
     findInput: byId<HTMLInputElement>('find-input'),
     findCount: byId<HTMLSpanElement>('find-count'),
