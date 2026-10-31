@@ -297,6 +297,9 @@ export class PdfView {
       standardFontDataUrl: `${this.assetsRoot}standard_fonts/`,
       wasmUrl: `${this.assetsRoot}wasm/`,
       iccUrl: `${this.assetsRoot}iccs/`,
+      // The pages' canvases on the GPU. Without it pdf.js asks for canvases it will read back,
+      // which keeps them off the GPU; carrel measured pages drawing faster and smoother with it.
+      enableHWA: true,
       // Fetch these on the main thread: webview resources are served through the document's
       // resource loader, which a blob worker does not reliably share.
       useWorkerFetch: false,

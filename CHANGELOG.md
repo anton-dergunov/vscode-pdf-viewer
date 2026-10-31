@@ -23,6 +23,7 @@ All notable changes to PDF Viewer are listed here.
 
 ### Fixed
 
+- Pages draw faster, and scrolling is smoother.
 - Undo and Redo in the Edit menu now work for highlights, and each undoes or redoes one change.
   Undoing every change since the last save leaves the PDF unchanged and no longer marked as unsaved.
 - Each recolor of a highlight can be undone on its own.
